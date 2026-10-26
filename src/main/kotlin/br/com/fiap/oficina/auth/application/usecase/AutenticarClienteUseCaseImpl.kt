@@ -9,6 +9,10 @@ internal class AutenticarClienteUseCaseImpl(
     private val clientes: ClienteRepository,
     private val emissor: EmissorDeToken,
 ) : AutenticarClienteUseCase {
+    // Os três retornos são guard clauses: CPF inválido e cliente não autorizado
+    // saem na hora. Aninhar para ter um único retorno deixaria o fluxo principal
+    // menos legível, não mais.
+    @Suppress("ReturnCount")
     override fun executar(cpfInformado: String?): ResultadoAutenticacao {
         val cpf =
             cpfInformado?.let(CPF::parse)

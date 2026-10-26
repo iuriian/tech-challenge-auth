@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$200</ID>
+    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$400</ID>
+    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$401</ID>
+    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$404</ID>
+    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$503</ID>
+    <ID>MagicNumber:CPF.kt$CPF$3</ID>
+    <ID>MagicNumber:CPF.kt$CPF$6</ID>
+    <ID>MagicNumber:CPF.kt$CPF$9</ID>
+    <ID>MagicNumber:CPF.kt$CPF.Companion$10</ID>
+    <ID>MagicNumber:CPF.kt$CPF.Companion$11</ID>
+    <ID>MagicNumber:CPF.kt$CPF.Companion$9</ID>
+    <ID>MagicNumber:DataSourceFactory.kt$DataSourceFactory$300_000</ID>
+    <ID>MagicNumber:DataSourceFactory.kt$DataSourceFactory$5_000</ID>
+    <ID>MagicNumber:DataSourceFactory.kt$DataSourceFactory$60_000</ID>
+    <ID>MagicNumber:RsaKeyLoader.kt$RsaKeyLoader$2048</ID>
+    <ID>MagicNumber:TokenSettings.kt$TokenSettings.Companion$3600</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,12 +1,19 @@
+import io.gitlab.arturbosch.detekt.Detekt
+import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
+
 plugins {
     kotlin("jvm") version "2.2.20"
     id("com.gradleup.shadow") version "9.2.2"
+    id("com.diffplug.spotless") version "7.0.4"
+    id("io.gitlab.arturbosch.detekt") version "1.23.8"
 }
 
 group = "br.com.fiap.oficina"
 version = "1.0.0"
 
 repositories { mavenCentral() }
+
+val ktlintVersion = "1.6.0"
 
 val invoker: Configuration by configurations.creating
 
@@ -39,7 +46,7 @@ tasks.test { useJUnitPlatform() }
 
 tasks.shadowJar {
     archiveClassifier.set("all")
-    mergeServiceFiles()   // preserva META-INF/services do driver JDBC
+    mergeServiceFiles() // preserva META-INF/services do driver JDBC
 }
 
 tasks.register<JavaExec>("runFunction") {
@@ -48,4 +55,60 @@ tasks.register<JavaExec>("runFunction") {
     mainClass.set("com.google.cloud.functions.invoker.runner.Invoker")
     classpath = files(invoker) + sourceSets["main"].runtimeClasspath
     args("--target", "br.com.fiap.oficina.auth.presentation.AuthFunction", "--port", "8081")
+}
+
+// Spotless é o único formatador do projeto e usa o ktlint como engine.
+// O ruleset de formatação do detekt embute ktlint também e fica desligado de
+// propósito, para não haver dois donos do mesmo arquivo.
+spotless {
+    kotlin {
+        target("src/**/*.kt")
+        ktlint(ktlintVersion)
+    }
+    kotlinGradle {
+        target("*.gradle.kts")
+        ktlint(ktlintVersion)
+    }
+    format("demais") {
+        target(
+            "*.md",
+            ".github/**/*.yml",
+            "sql/**/*.sql",
+            "terraform/**/*.tf",
+            "terraform/**/*.tftpl",
+        )
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom("$rootDir/config/detekt/detekt.yml")
+    source.setFrom("src/main/kotlin", "src/test/kotlin")
+    // O baseline registra os achados que existiam na adoção da ferramenta, para
+    // que o build fique verde sem esconder nada: o arquivo é versionado e
+    // revisável, e qualquer violação nova continua falhando.
+    baseline = file("$rootDir/config/detekt/detekt-baseline.xml")
+}
+
+tasks.withType<Detekt>().configureEach {
+    jvmTarget = "21"
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        txt.required.set(false)
+        sarif.required.set(false)
+        md.required.set(false)
+    }
+}
+
+tasks.withType<DetektCreateBaselineTask>().configureEach {
+    jvmTarget = "21"
+}
+
+tasks.register("qualidade") {
+    group = "verification"
+    description = "Verifica formatação (Spotless/ktlint) e análise estática (detekt)"
+    dependsOn("spotlessCheck", "detekt")
 }

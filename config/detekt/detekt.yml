@@ -1,0 +1,17 @@
+# Overrides sobre o config padrão do detekt (buildUponDefaultConfig = true).
+# Apenas o que diverge do default aparece aqui — o resto vem do detekt.
+#
+# Não cole aqui o arquivo gerado por detektGenerateConfig: o bloco `config:`
+# dele traz `excludes: []`, que o plugin rejeita quando combinado com
+# buildUponDefaultConfig ("not of required type String").
+
+build:
+  maxIssues: 0
+
+style:
+  # Formatação é responsabilidade exclusiva do Spotless/ktlint. Manter as duas
+  # regras aqui também significaria dois donos para a mesma decisão.
+  NewLineAtEndOfFile:
+    active: false
+  MaxLineLength:
+    active: false

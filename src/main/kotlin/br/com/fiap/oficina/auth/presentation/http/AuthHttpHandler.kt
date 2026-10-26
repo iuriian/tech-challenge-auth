@@ -17,6 +17,10 @@ class AuthHttpHandler(
     private val settings: TokenSettings,
     private val mapper: ObjectMapper,
 ) {
+    // Esta é a fronteira externa da função: qualquer exceção que escape aqui vira
+    // stack trace na resposta ao cliente. O catch amplo é deliberado e traduz
+    // qualquer falha inesperada em 503, registrando o detalhe apenas no log.
+    @Suppress("TooGenericExceptionCaught")
     fun handle(
         req: HttpRequest,
         res: HttpResponse,

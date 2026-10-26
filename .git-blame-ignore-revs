@@ -1,0 +1,7 @@
+# Commits de formatação em massa, sem mudança de comportamento.
+# Ative localmente com:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# O GitHub respeita este arquivo automaticamente na visão de blame.
+
+# style: normaliza a formatação do código para o padrão ktlint_official
+3abf4d24eb783eee1b62dfe4cb40c6f8bac27ce5
