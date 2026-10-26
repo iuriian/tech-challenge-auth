@@ -1,21 +1,178 @@
 # tech-challenge-auth
 
-Serviço de autenticação de clientes da oficina. Recebe um CPF, confere o cadastro
-no banco e devolve um JWT RS256 que os demais serviços validam offline pelo JWKS
-publicado aqui.
+## Propósito
 
-Não há senha: o CPF é o único fator. O serviço prova identidade contra o cadastro,
-não posse de um segredo — ver [Limitações conhecidas](#limitações-conhecidas).
+Serviço de autenticação dos clientes da oficina. Recebe um CPF, confere o cadastro
+no banco e devolve um JWT RS256 assinado, que os demais serviços do sistema validam
+**offline** pelo JWKS publicado aqui — sem nenhuma chamada de volta a este serviço a
+cada requisição.
 
-## Endpoints
+É o único componente do sistema que emite identidade. Os outros serviços não
+conhecem CPF, não falam com a tabela de clientes e não guardam segredo de
+assinatura: confiam no `iss`/`aud` do token e na chave pública do JWKS.
+
+Não há senha. O CPF é o único fator, por decisão de escopo do desafio — o serviço
+prova identidade contra o cadastro, não posse de um segredo. Ver
+[Limitações conhecidas](#limitações-conhecidas).
+
+## Tecnologias utilizadas
+
+| Camada | Tecnologia | Versão | Por quê |
+| --- | --- | --- | --- |
+| Linguagem | Kotlin (JVM) | 2.2.20 | — |
+| Runtime | JDK | 21 | Toolchain resolvida pelo Gradle |
+| HTTP | Ktor + engine CIO | 3.6.0 | Coroutines puras, sem Netty: menos classes na partida, o que importa com `min-instances=0` |
+| Injeção de dependência | Koin | 4.1.1 | Grafo explícito em código, sem reflexão nem processamento de anotação |
+| JWT / JWKS | Nimbus JOSE+JWT | 10.5 | RS256 e serialização de JWK Set |
+| Banco | PostgreSQL (driver JDBC) | 42.7.8 | Cloud SQL |
+| Pool de conexões | HikariCP | 6.3.0 | — |
+| JSON | Jackson (módulo Kotlin) | 2.20.0 | — |
+| Build | Gradle (Kotlin DSL) + Shadow | 9.3.0 / 9.2.2 | Fat JAR com o servidor embutido |
+| Testes | JUnit 5 + Ktor test host | 5.13.4 | — |
+| Teste de arquitetura | Konsist | 0.17.3 | As regras de camada como teste executável |
+| Cobertura | Jacoco | 0.8.13 | Mínimo de 90% de instruções e 80% de branches |
+| Análise estática | detekt | 1.23.8 | — |
+| Formatação | Spotless + ktlint | 7.0.4 / 1.6.0 | Dono único do estilo; regras vêm do `.editorconfig` |
+| Imagem | `gcr.io/distroless/java21-debian12:nonroot` | — | Sem shell nem gerenciador de pacotes |
+| Infraestrutura | Terraform | >= 1.6 | Estado em GCS |
+| Nuvem | Cloud Run, API Gateway, Artifact Registry, Secret Manager, VPC connector | — | — |
+| CI/CD | GitHub Actions | — | Um workflow por responsabilidade |
+
+## Arquitetura
+
+### Camadas (hexagonal)
+
+Quatro camadas, com as dependências sempre apontando para o domínio. As regras não
+são convenção: estão expressas como teste executável em
+`src/test/kotlin/.../architecture/ArquiteturaTest.kt` (Konsist) — o domínio não
+conhece nenhuma outra camada nem framework algum, as portas da aplicação não expõem
+detalhes técnicos, e a infraestrutura não depende da apresentação.
+
+```mermaid
+flowchart TB
+    subgraph P["presentation"]
+        SV["Servidor<br/>Ktor CIO"]
+        AR["AuthRoutes"]
+    end
+    subgraph A["application"]
+        UC["AutenticarClienteUseCase"]
+        PE["porta<br/>EmissorDeToken"]
+        PC["porta<br/>ChavesPublicas"]
+    end
+    subgraph D["domain"]
+        CPF["CPF"]
+        CLI["Cliente<br/>StatusCliente"]
+        PR["porta<br/>ClienteRepository"]
+    end
+    subgraph I["infrastructure"]
+        JR["JdbcClienteRepository"]
+        NT["NimbusTokenAdapter"]
+        CF["TokenSettings<br/>DatabaseSettings"]
+        DI["Modules (Koin)"]
+    end
+
+    SV --> AR
+    AR --> UC
+    AR --> PC
+    UC --> PR
+    UC --> PE
+    UC --> CPF
+    UC --> CLI
+    JR -.implementa.-> PR
+    NT -.implementa.-> PE
+    NT -.implementa.-> PC
+    DI -.monta o grafo.-> AR
+
+    classDef dom fill:#1f6f43,stroke:#0d3b24,color:#fff
+    classDef app fill:#1f4e79,stroke:#102a43,color:#fff
+    classDef inf fill:#6b4c9a,stroke:#3b2a57,color:#fff
+    classDef pre fill:#8a5a1b,stroke:#4d3110,color:#fff
+    class CPF,CLI,PR dom
+    class UC,PE,PC app
+    class JR,NT,CF,DI inf
+    class SV,AR pre
+```
+
+As setas pontilhadas são as inversões: `JdbcClienteRepository` e
+`NimbusTokenAdapter` vivem na infraestrutura mas implementam contratos declarados
+nas camadas de dentro. Trocar Postgres por outro banco, ou Nimbus por outra
+biblioteca de JOSE, não toca domínio nem aplicação.
+
+### Runtime no GCP
+
+```mermaid
+flowchart LR
+    CONS["Serviços consumidores<br/>(app no GKE)"]
+    GW["API Gateway<br/>oficina-auth-gw"]
+    CR["Cloud Run<br/>oficina-auth<br/>SA auth-fn"]
+    SM["Secret Manager<br/>jwt-signing-key<br/>db-auth-password"]
+    VPC["VPC connector<br/>auth-connector"]
+    DB[("Cloud SQL<br/>papel auth_ro")]
+    AR["Artifact Registry<br/>oficina-auth"]
+
+    CONS -->|"POST /auth/token"| GW
+    GW -->|"IAM: SA auth-gateway<br/>roles/run.invoker"| CR
+    CR -->|"monta como env var"| SM
+    CR -->|"egress private-ranges-only"| VPC
+    VPC -->|"SELECT, só leitura"| DB
+    AR -.->|"imagem da revisão"| CR
+    CONS -.->|"GET /.well-known/jwks.json<br/>valida o token offline"| GW
+```
+
+O Cloud Run roda com `--no-allow-unauthenticated`: o único chamador autorizado é a
+service account do gateway. O acesso ao banco é só leitura em três níveis — o papel
+`auth_ro` tem `SELECT` em quatro colunas e `default_transaction_read_only`, e o pool
+do Hikari sobe com `isReadOnly`.
+
+### Fluxo de uma emissão
+
+```mermaid
+sequenceDiagram
+    participant C as Consumidor
+    participant G as API Gateway
+    participant S as Cloud Run (auth)
+    participant DB as Cloud SQL
+    C->>G: POST /auth/token {cpf}
+    G->>S: repassa autenticado por IAM
+    S->>S: CPF.parse — dígitos verificadores
+    S->>DB: SELECT id, nome, status FROM cliente
+    DB-->>S: cadastro
+    S->>S: status ATIVO? assina RS256 com kid
+    S-->>C: 200 {access_token, token_type, expires_in}
+```
+
+## API — Swagger e Postman
+
+O contrato é descrito em **[`terraform/openapi.yaml.tftpl`](terraform/openapi.yaml.tftpl)**,
+que é a fonte única: o mesmo arquivo é o que o Terraform publica como configuração do
+API Gateway, então o que está documentado é literalmente o que o gateway aceita.
+
+Para visualizar renderizado, abra no Swagger Editor:
+
+**[Abrir no Swagger Editor](https://editor.swagger.io/?url=https://raw.githubusercontent.com/iuriian/tech-challenge-auth/main/terraform/openapi.yaml.tftpl)**
+
+> O link resolve pelo arquivo em `main`, então só funciona depois que a feature é
+> mesclada. Antes disso, use **File → Import file** no
+> [editor.swagger.io](https://editor.swagger.io/) apontando para a cópia local, ou
+> suba um Swagger UI contra o arquivo do working tree:
+>
+> ```bash
+> docker run --rm -p 8090:8080 \
+>   -e SWAGGER_JSON=/spec/openapi.yaml.tftpl \
+>   -v "$PWD/terraform:/spec:ro" swaggerapi/swagger-ui
+> ```
+
+O campo `x-google-backend.address` aparece como `${service_url}` — é o placeholder
+que o `templatefile` do Terraform substitui pela URL real do Cloud Run no `apply`.
+Isso não afeta a renderização dos endpoints.
+
+### Endpoints
 
 | Método | Caminho | Resposta |
 | --- | --- | --- |
 | `POST` | `/auth/token` | `200` com o token, `400` CPF inválido, `401` cliente inexistente ou inativo, `503` falha interna |
 | `GET` | `/.well-known/jwks.json` | `200` com o JWK Set (`public, max-age=300`) |
 | `GET` | `/.well-known/openid-configuration` | `200` com os metadados do emissor (`public, max-age=3600`) |
-
-Emissão de token:
 
 ```bash
 curl -X POST "$ISSUER/auth/token" \
@@ -38,50 +195,109 @@ O CPF é aceito com ou sem máscara. Os erros seguem o formato do OAuth 2.0
 { "error": "invalid_request", "error_description": "CPF inválido" }
 ```
 
-### Claims do token
+Claims do token: `iss`, `sub` (o `id` do cliente), `aud`, `iat`, `nbf`, `exp`,
+`jti`, mais `name` e `roles: ["CLIENTE"]`. O header leva `kid` — o thumbprint da
+chave — para que o consumidor escolha a chave certa no JWKS.
 
-`iss`, `sub` (o `id` do cliente), `aud`, `iat`, `nbf`, `exp`, `jti`, mais `name` e
-`roles: ["CLIENTE"]`. O header leva `kid` — o thumbprint da chave — para que o
-consumidor escolha a chave certa no JWKS.
+### Coleção do Postman
 
-## Arquitetura
+No Postman: **Import → Raw text**, cole o JSON abaixo e defina a variável `issuer`
+(`http://localhost:8081` no local, ou o output `issuer` do Terraform).
 
-Arquitetura hexagonal em quatro camadas, com as dependências sempre apontando para
-o domínio. As regras estão expressas como testes executáveis em
-`src/test/kotlin/.../architecture/ArquiteturaTest.kt` (Konsist), não só como
-convenção: o domínio não conhece nenhuma outra camada nem framework algum, as portas
-da aplicação não expõem detalhes técnicos, e a infraestrutura não depende da
-apresentação.
-
-```text
-domain          CPF, Cliente, StatusCliente, ClienteRepository (interface)
-application     AutenticarClienteUseCase + portas EmissorDeToken, ChavesPublicas
-infrastructure  JdbcClienteRepository, NimbusTokenAdapter, config, DI (Koin)
-presentation    Servidor (Ktor CIO), AuthRoutes
+```json
+{
+  "info": {
+    "name": "oficina-auth",
+    "description": "Autenticacao de clientes da oficina por CPF",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "issuer",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "cpf_ativo",
+      "value": "529.982.247-25"
+    },
+    {
+      "key": "cpf_inativo",
+      "value": "111.444.777-35"
+    }
+  ],
+  "item": [
+    {
+      "name": "Token - CPF valido e cliente ativo (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_ativo}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token"
+      }
+    },
+    {
+      "name": "Token - CPF invalido (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"000\"\n}"
+        },
+        "url": "{{issuer}}/auth/token"
+      }
+    },
+    {
+      "name": "Token - cliente inativo (401)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_inativo}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token"
+      }
+    },
+    {
+      "name": "JWKS",
+      "request": {
+        "method": "GET",
+        "url": "{{issuer}}/.well-known/jwks.json"
+      }
+    },
+    {
+      "name": "Discovery",
+      "request": {
+        "method": "GET",
+        "url": "{{issuer}}/.well-known/openid-configuration"
+      }
+    }
+  ]
+}
 ```
 
-```mermaid
-sequenceDiagram
-    participant C as Cliente
-    participant G as API Gateway
-    participant S as Cloud Run (auth)
-    participant DB as Cloud SQL
-    C->>G: POST /auth/token {cpf}
-    G->>S: repassa autenticado por IAM
-    S->>S: CPF.parse — dígitos verificadores
-    S->>DB: SELECT id, nome, status FROM cliente (via VPC connector)
-    DB-->>S: cadastro
-    S->>S: status ATIVO? assina RS256
-    S-->>C: 200 {access_token}
-```
+## Execução local
 
-O acesso ao banco é só leitura em três níveis: o papel `auth_ro` tem `SELECT` em
-quatro colunas e `default_transaction_read_only`, e o pool do Hikari sobe com
-`isReadOnly`.
-
-## Rodando local
-
-Requer JDK 21 (o Gradle resolve o toolchain sozinho) e um Postgres.
+Requer JDK 21 (o Gradle resolve o toolchain sozinho), Docker e OpenSSL.
 
 ### 1. Banco
 
@@ -128,9 +344,28 @@ export DB_PASSWORD=local
 ```
 
 `./gradlew run` escuta na **8081** de propósito, deixando a 8080 livre para o resto
-do stack na máquina.
+do stack na máquina. Para validar:
 
-## Variáveis de ambiente
+```bash
+curl -s localhost:8081/.well-known/jwks.json | jq '.keys[0].kid'
+curl -s -X POST localhost:8081/auth/token \
+  -H 'Content-Type: application/json' -d '{"cpf":"529.982.247-25"}' | jq
+```
+
+### Rodar como container
+
+```bash
+./gradlew shadowJar
+docker build -t oficina-auth:local .
+docker run --rm -p 8080:8080 \
+  -e ISSUER=http://localhost:8080 \
+  -e JWT_PRIVATE_KEY="$(cat jwt-private.pem)" \
+  -e DB_URL=jdbc:postgresql://host.docker.internal:5432/oficina \
+  -e DB_USER=postgres -e DB_PASSWORD=local \
+  oficina-auth:local
+```
+
+### Variáveis de ambiente
 
 | Variável | Obrigatória | Padrão | Observação |
 | --- | --- | --- | --- |
@@ -146,6 +381,86 @@ do stack na máquina.
 Ausência de uma obrigatória derruba a aplicação na partida, não na primeira
 requisição. `TokenSettings` e `DatabaseSettings` sobrescrevem `toString()` para que
 chave e senha nunca apareçam em log.
+
+## Deploy
+
+### 1. Infraestrutura (uma vez por ambiente)
+
+A VPC e o secret da senha do banco **não** nascem aqui — vêm do
+`tech-challenge-infra-database` e são lidos como `data`. **Aplique aquele primeiro.**
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars   # preencha project_id e ci_service_account_id
+terraform init
+terraform apply
+```
+
+O Terraform cria o serviço do Cloud Run uma única vez, só para que o endereço exista
+e possa ser apontado no backend do gateway; todo o runtime (imagem, variáveis,
+secrets, escala) pertence ao deploy no GitHub Actions, e por isso o `template` está
+inteiro em `ignore_changes`. Essa divisão quebra o ciclo
+`ISSUER → hostname do gateway → backend → URL do serviço`, que impediria descrever
+tudo num `apply` só. A primeira revisão sobe com a imagem de bootstrap até o
+primeiro deploy do pipeline.
+
+### 2. Passos manuais depois do apply
+
+Sem estes três, o primeiro deploy sobe e morre na partida.
+
+O `apply` cria o secret `jwt-signing-key` **vazio**. Sem uma versão com o PEM, a
+leitura da configuração falha:
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt-private.pem
+gcloud secrets versions add jwt-signing-key --data-file=jwt-private.pem
+rm jwt-private.pem
+```
+
+O papel de leitura no banco, com o usuário administrador do Cloud SQL — a senha vem
+do Secret Manager, nunca do arquivo:
+
+```bash
+psql -v senha="$(gcloud secrets versions access latest --secret=db-auth-password)" \
+  -f sql/auth_ro.sql
+```
+
+E os environments `staging` e `production` no GitHub, com as variáveis
+`GCP_PROJECT_ID`, `REGION`, `AUTH_ISSUER` (o output `issuer`) e `DB_URL`, mais o
+secret `GCP_SA_KEY`.
+
+### 3. Pipeline
+
+Gitflow, com um workflow por responsabilidade.
+
+| Workflow | Dispara em | Faz |
+| --- | --- | --- |
+| `ci.yml` | PR para `develop` ou `main`; `workflow_call` | Um job por checagem: formatação, análise estática, testes com cobertura, fat JAR |
+| `cd-homolog.yml` | push em `release/**`; manual | Chama o CI, constrói e publica a imagem, faz deploy em homologação, roda smoke test |
+| `cd-prod.yml` | push em `main`; manual | Resolve o digest da revisão no ar em homologação, promove **essa** imagem para produção, roda smoke test |
+
+```mermaid
+flowchart LR
+    F["feature/*"] -->|"PR: ci.yml"| DV["develop"]
+    DV --> R["release/*"]
+    R -->|"cd-homolog.yml<br/>build + push + deploy"| H["Homologação"]
+    R -->|"PR: ci.yml"| M["main"]
+    M -->|"cd-prod.yml<br/>promove por digest"| PR2["Produção"]
+    H -.->|"digest da revisão no ar"| PR2
+```
+
+Produção nunca constrói imagem. O `cd-prod.yml` lê o digest do que está servindo em
+homologação e faz deploy dele, então o artefato aprovado é bit a bit o artefato
+promovido.
+
+### Rollback
+
+As dez imagens mais recentes ficam retidas no Artifact Registry (política de
+`cleanup` em `terraform/registry.tf`), então basta apontar a revisão anterior:
+
+```bash
+gcloud run deploy oficina-auth --region=$REGION --image=$REPO@$DIGEST_ANTERIOR
+```
 
 ## Qualidade
 
@@ -163,66 +478,6 @@ chave e senha nunca apareçam em log.
   `check`. O relatório sai em `build/reports/jacoco/test/` e o CI o publica como
   artefato em toda execução. O `main()` do `Servidor.kt` está fora da medição: sobe
   um servidor de verdade e nenhum teste o executa sem subir o processo.
-
-## Pipeline
-
-Gitflow, com um workflow por responsabilidade.
-
-| Workflow | Dispara em | Faz |
-| --- | --- | --- |
-| `ci.yml` | PR para `develop` ou `main`; `workflow_call` | Um job por checagem: formatação, análise estática, testes com cobertura, fat JAR |
-| `cd-homolog.yml` | push em `release/**`; manual | Chama o CI, constrói e publica a imagem, faz deploy em homologação, roda smoke test |
-| `cd-prod.yml` | push em `main`; manual | Resolve o digest da revisão no ar em homologação, promove **essa** imagem para produção, roda smoke test |
-
-Produção nunca constrói imagem. O `cd-prod.yml` lê o digest do que está servindo em
-homologação e faz deploy dele, então o artefato aprovado é bit a bit o artefato
-promovido.
-
-## Infraestrutura
-
-Terraform em `terraform/`, estado em GCS (`oficina-tfstate`, prefixo `auth`).
-Provisiona Artifact Registry, o serviço do Cloud Run, VPC connector, API Gateway,
-service accounts e o secret da chave de assinatura.
-
-A VPC e o secret da senha do banco **não** nascem aqui — vêm do
-`tech-challenge-infra-database` e são lidos como `data`. Aplique aquele primeiro.
-
-O Terraform cria o serviço do Cloud Run uma única vez, só para que o endereço exista
-e possa ser apontado no backend do gateway; todo o runtime (imagem, variáveis,
-secrets, escala) pertence ao deploy no GitHub Actions, e por isso o `template` está
-inteiro em `ignore_changes`. Essa divisão quebra o ciclo
-`ISSUER → hostname do gateway → backend → URL do serviço`, que impediria descrever
-tudo num `apply` só.
-
-```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars   # preencha project_id e ci_service_account_id
-terraform init
-terraform apply
-```
-
-### Passos manuais depois do apply
-
-O `apply` cria o secret `jwt-signing-key` **vazio**. Sem uma versão com o PEM, a
-primeira revisão do serviço sobe e morre na leitura da configuração:
-
-```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt-private.pem
-gcloud secrets versions add jwt-signing-key --data-file=jwt-private.pem
-rm jwt-private.pem
-```
-
-O papel de leitura no banco também é uma execução única, com o usuário administrador
-do Cloud SQL — a senha vem do Secret Manager, nunca do arquivo:
-
-```bash
-psql -v senha="$(gcloud secrets versions access latest --secret=db-auth-password)" \
-  -f sql/auth_ro.sql
-```
-
-Por fim, configure no GitHub os environments `staging` e `production` com as
-variáveis `GCP_PROJECT_ID`, `REGION`, `AUTH_ISSUER` (o output `issuer`), `DB_URL` e o
-secret `GCP_SA_KEY`.
 
 ## Limitações conhecidas
 
