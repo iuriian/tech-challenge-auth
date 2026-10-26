@@ -24,7 +24,7 @@ internal object ChavesDeTeste {
     val pem2048Alternativo: String by lazy { paraPem(par2048Alternativo) }
 
     /** Mesmo PEM, mas com `\n` literal — formato comum quando a chave vem de variável de ambiente. */
-    val pem2048ComEscapes: String by lazy { pem2048.replace("\n", "\n") }
+    val pem2048ComEscapes: String by lazy { pem2048.replace("\n", "\\n") }
 
     /** Chave RSA sem os parâmetros CRT (apenas módulo e expoente privado). */
     val pemSemParametrosCrt: String by lazy {
