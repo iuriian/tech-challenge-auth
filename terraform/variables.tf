@@ -20,9 +20,16 @@ variable "connector_cidr" {
   description = "Faixa /28 livre na VPC (não pode sobrepor subnets nem ranges do GKE)"
 }
 
-variable "function_name" {
-  type    = string
-  default = "oficina-auth"
+variable "service_name" {
+  type        = string
+  default     = "oficina-auth"
+  description = "Nome do serviço no Cloud Run e do repositório de imagens"
+}
+
+variable "bootstrap_image" {
+  type        = string
+  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+  description = "Imagem da primeira revisão, substituída pelo deploy do CI"
 }
 
 variable "db_auth_secret_id" {

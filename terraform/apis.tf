@@ -1,8 +1,6 @@
 locals {
   apis = toset([
-    "cloudfunctions.googleapis.com",
     "run.googleapis.com",
-    "cloudbuild.googleapis.com",
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
     "vpcaccess.googleapis.com",

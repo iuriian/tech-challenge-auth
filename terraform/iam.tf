@@ -6,17 +6,12 @@ data "google_service_account" "ci" {
 
 resource "google_service_account" "fn" {
   account_id   = "auth-fn"
-  display_name = "Runtime da função de autenticação"
+  display_name = "Runtime do serviço de autenticação"
 }
 
 resource "google_service_account" "gateway" {
   account_id   = "auth-gateway"
-  display_name = "API Gateway → função de autenticação"
-}
-
-resource "google_service_account" "build" {
-  account_id   = "auth-build"
-  display_name = "Cloud Build da função de autenticação"
+  display_name = "API Gateway → serviço de autenticação"
 }
 
 resource "google_secret_manager_secret_iam_member" "fn_jwt" {
@@ -37,36 +32,25 @@ resource "google_project_iam_member" "fn_logs" {
   member  = "serviceAccount:${google_service_account.fn.email}"
 }
 
-resource "google_project_iam_member" "build" {
-  for_each = toset([
-    "roles/cloudbuild.builds.builder",
-    "roles/logging.logWriter",
-    "roles/artifactregistry.writer",
-    "roles/storage.objectViewer",
-  ])
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.build.email}"
-}
-
 resource "google_project_iam_member" "ci" {
   for_each = toset([
-    "roles/cloudfunctions.developer",
-    "roles/run.admin"
+    "roles/run.admin",
   ])
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${data.google_service_account.ci.email}"
 }
 
-resource "google_service_account_iam_member" "ci_act_as_fn" {
-  service_account_id = google_service_account.fn.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${data.google_service_account.ci.email}"
+# Push das imagens no repositório do serviço, sem dar acesso ao projeto inteiro.
+resource "google_artifact_registry_repository_iam_member" "ci_push" {
+  location   = google_artifact_registry_repository.auth.location
+  repository = google_artifact_registry_repository.auth.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${data.google_service_account.ci.email}"
 }
 
-resource "google_service_account_iam_member" "ci_act_as_build" {
-  service_account_id = google_service_account.build.name
+resource "google_service_account_iam_member" "ci_act_as_fn" {
+  service_account_id = google_service_account.fn.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${data.google_service_account.ci.email}"
 }

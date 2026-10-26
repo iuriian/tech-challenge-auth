@@ -8,7 +8,7 @@ schemes:
 produces:
   - application/json
 x-google-backend:
-  address: ${function_url}
+  address: ${service_url}
   path_translation: APPEND_PATH_TO_ADDRESS
   deadline: 15.0
 paths:

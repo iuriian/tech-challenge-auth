@@ -1,7 +1,3 @@
-locals {
-  function_url = "https://${var.region}-${var.project_id}.cloudfunctions.net/${var.function_name}"
-}
-
 resource "google_api_gateway_api" "auth" {
   provider     = google-beta
   api_id       = "oficina-auth"
@@ -19,7 +15,7 @@ resource "google_api_gateway_api_config" "auth" {
     document {
       path = "openapi.yaml"
       contents = base64encode(templatefile("${path.module}/openapi.yaml.tftpl", {
-        function_url = local.function_url
+        service_url = google_cloud_run_v2_service.auth.uri
       }))
     }
   }
