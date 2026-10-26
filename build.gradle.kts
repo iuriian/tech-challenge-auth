@@ -60,15 +60,25 @@ tasks.register<JavaExec>("runFunction") {
 // Spotless é o único formatador do projeto e usa o ktlint como engine.
 // O ruleset de formatação do detekt embute ktlint também e fica desligado de
 // propósito, para não haver dois donos do mesmo arquivo.
+//
+// O estilo vem exclusivamente do .editorconfig. Não use editorConfigOverride
+// aqui: ele vence o arquivo, e aí a IDE (que lê o .editorconfig) e o build
+// passam a divergir sem aviso.
 spotless {
     kotlin {
         target("src/**/*.kt")
         ktlint(ktlintVersion)
+        trimTrailingWhitespace()
+        endWithNewline()
     }
+
     kotlinGradle {
         target("*.gradle.kts")
         ktlint(ktlintVersion)
+        trimTrailingWhitespace()
+        endWithNewline()
     }
+
     format("demais") {
         target(
             "*.md",
@@ -86,9 +96,6 @@ detekt {
     buildUponDefaultConfig = true
     config.setFrom("$rootDir/config/detekt/detekt.yml")
     source.setFrom("src/main/kotlin", "src/test/kotlin")
-    // O baseline registra os achados que existiam na adoção da ferramenta, para
-    // que o build fique verde sem esconder nada: o arquivo é versionado e
-    // revisável, e qualquer violação nova continua falhando.
     baseline = file("$rootDir/config/detekt/detekt-baseline.xml")
 }
 
