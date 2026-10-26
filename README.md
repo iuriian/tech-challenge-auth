@@ -267,7 +267,6 @@ Gitflow, com um workflow por responsabilidade — ver o
 | `cd-homolog.yml` | push em `release/**`; manual | Chama o CI, constrói e publica a imagem, faz deploy em homologação, roda smoke test |
 | `cd-prod.yml` | push em `main`; manual | Resolve o digest da revisão no ar em homologação, promove **essa** imagem para produção, roda smoke test |
 
-
 Produção nunca constrói imagem. O `cd-prod.yml` lê o digest do que está servindo em
 homologação e faz deploy dele, então o artefato aprovado é bit a bit o artefato
 promovido.
