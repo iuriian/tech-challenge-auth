@@ -44,10 +44,15 @@ Arquitetura hexagonal em quatro camadas, com as dependências sempre apontando p
 domínio, servida no Cloud Run atrás de um API Gateway. As regras de camada são teste
 executável (Konsist), não convenção.
 
-Diagramas em **[docs/arquitetura.md](docs/arquitetura.md)**:
+![Camadas da aplicação: presentation (Servidor Ktor, AuthRoutes), application (AutenticarClienteUseCase e as portas EmissorDeToken e ChavesPublicas), domain (CPF, Cliente, StatusCliente e a porta ClienteRepository) e infrastructure (JdbcClienteRepository, NimbusTokenAdapter, configuração e módulos Koin). As setas cheias apontam sempre para dentro; as pontilhadas marcam os adaptadores implementando as portas das camadas internas.](docs/arquitetura-camadas.svg)
 
-- [Camadas (hexagonal)](docs/arquitetura.md#camadas-hexagonal) — os pacotes, as
-  portas e onde estão as inversões de dependência
+As setas pontilhadas são as inversões: `JdbcClienteRepository` e
+`NimbusTokenAdapter` vivem na infraestrutura mas implementam contratos declarados
+nas camadas de dentro. Trocar Postgres por outro banco, ou Nimbus por outra
+biblioteca de JOSE, não toca domínio nem aplicação.
+
+Os demais diagramas estão em **[docs/arquitetura.md](docs/arquitetura.md)**:
+
 - [Runtime no GCP](docs/arquitetura.md#runtime-no-gcp) — gateway, Cloud Run, Secret
   Manager, VPC connector e Cloud SQL
 - [Fluxo de uma emissão](docs/arquitetura.md#fluxo-de-uma-emissão) — o caminho de um
