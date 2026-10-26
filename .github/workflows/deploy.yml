@@ -10,6 +10,8 @@ on:
       - "gradle.properties"
       - "gradle/**"
       - "gradlew"
+      - ".editorconfig"
+      - "config/detekt/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
@@ -29,6 +31,19 @@ jobs:
           java-version: "21"
 
       - uses: gradle/actions/setup-gradle@v4
+
+      # Roda antes dos testes: formatação e análise estática são as checagens
+      # mais baratas, então falham rápido e poupam a compilação dos testes.
+      - name: Qualidade (Spotless/ktlint e detekt)
+        run: ./gradlew qualidade --no-daemon
+
+      - name: Relatórios do detekt
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: detekt-reports
+          path: build/reports/detekt/
+          if-no-files-found: ignore
 
       - name: Testes e fat JAR
         run: ./gradlew test shadowJar --no-daemon
