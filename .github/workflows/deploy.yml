@@ -12,6 +12,8 @@ on:
       - "gradlew"
       - ".editorconfig"
       - "config/detekt/**"
+      - "Dockerfile"
+      - ".dockerignore"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
@@ -48,10 +50,13 @@ jobs:
       - name: Testes e fat JAR
         run: ./gradlew test shadowJar --no-daemon
 
+      # Exatamente o que o Dockerfile copia: o fat JAR e o invoker.
       - uses: actions/upload-artifact@v4
         with:
-          name: function-jar
-          path: build/libs/*-all.jar
+          name: imagem-context
+          path: |
+            build/libs/*-all.jar
+            build/invoker/
           if-no-files-found: error
 
   deploy:
@@ -61,12 +66,14 @@ jobs:
     env:
       PROJECT: ${{ vars.GCP_PROJECT_ID }}
       REGION: ${{ vars.REGION }}
-      FUNCTION: oficina-auth
+      SERVICE: oficina-auth
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
-          name: function-jar
-          path: deploy
+          name: imagem-context
+          path: build
 
       - uses: google-github-actions/auth@v2
         with:
@@ -74,35 +81,40 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy da função
+      - name: Autenticar no Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build e push da imagem
+        id: imagem
         run: |
-          gcloud functions deploy "$FUNCTION" \
-            --gen2 \
+          REPO="${REGION}-docker.pkg.dev/${PROJECT}/oficina-auth/${SERVICE}"
+          docker build -t "${REPO}:${GITHUB_SHA}" -t "${REPO}:latest" .
+          docker push "${REPO}:${GITHUB_SHA}"
+          docker push "${REPO}:latest"
+          echo "ref=${REPO}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      # --concurrency=8 casa com o Hikari (maximumPoolSize=2) e limita o banco
+      # a 10 conexões no pico de 5 instâncias. O Cloud Functions gen2 servia uma
+      # requisição por instância; aqui a JVM é reaproveitada entre elas.
+      - name: Deploy no Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
             --project="$PROJECT" \
             --region="$REGION" \
-            --runtime=java21 \
-            --source=deploy \
-            --entry-point=br.com.fiap.oficina.auth.presentation.AuthFunction \
-            --trigger-http \
+            --image="${{ steps.imagem.outputs.ref }}" \
             --no-allow-unauthenticated \
             --service-account="auth-fn@${PROJECT}.iam.gserviceaccount.com" \
-            --build-service-account="projects/${PROJECT}/serviceAccounts/auth-build@${PROJECT}.iam.gserviceaccount.com" \
             --vpc-connector=auth-connector \
-            --egress-settings=private-ranges-only \
+            --vpc-egress=private-ranges-only \
+            --port=8080 \
             --memory=512Mi \
             --cpu=1 \
             --timeout=15s \
+            --concurrency=8 \
             --min-instances=0 \
             --max-instances=5 \
             --set-env-vars="ISSUER=${{ vars.AUTH_ISSUER }},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${{ vars.DB_URL }},DB_USER=auth_ro" \
             --set-secrets="JWT_PRIVATE_KEY=jwt-signing-key:latest,DB_PASSWORD=db-auth-password:latest"
-
-      - name: Permitir invocação apenas pelo API Gateway
-        run: |
-          gcloud functions add-invoker-policy-binding "$FUNCTION" \
-            --project="$PROJECT" \
-            --region="$REGION" \
-            --member="serviceAccount:auth-gateway@${PROJECT}.iam.gserviceaccount.com"
 
       - name: Smoke test
         run: |
