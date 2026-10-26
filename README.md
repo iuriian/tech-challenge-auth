@@ -201,99 +201,12 @@ chave — para que o consumidor escolha a chave certa no JWKS.
 
 ### Coleção do Postman
 
-No Postman: **Import → Raw text**, cole o JSON abaixo e defina a variável `issuer`
-(`http://localhost:8081` no local, ou o output `issuer` do Terraform).
+**[docs/oficina-auth.postman_collection.json](docs/oficina-auth.postman_collection.json)**
 
-```json
-{
-  "info": {
-    "name": "oficina-auth",
-    "description": "Autenticacao de clientes da oficina por CPF",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "variable": [
-    {
-      "key": "issuer",
-      "value": "http://localhost:8081"
-    },
-    {
-      "key": "cpf_ativo",
-      "value": "529.982.247-25"
-    },
-    {
-      "key": "cpf_inativo",
-      "value": "111.444.777-35"
-    }
-  ],
-  "item": [
-    {
-      "name": "Token - CPF valido e cliente ativo (200)",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"cpf\": \"{{cpf_ativo}}\"\n}"
-        },
-        "url": "{{issuer}}/auth/token"
-      }
-    },
-    {
-      "name": "Token - CPF invalido (400)",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"cpf\": \"000\"\n}"
-        },
-        "url": "{{issuer}}/auth/token"
-      }
-    },
-    {
-      "name": "Token - cliente inativo (401)",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"cpf\": \"{{cpf_inativo}}\"\n}"
-        },
-        "url": "{{issuer}}/auth/token"
-      }
-    },
-    {
-      "name": "JWKS",
-      "request": {
-        "method": "GET",
-        "url": "{{issuer}}/.well-known/jwks.json"
-      }
-    },
-    {
-      "name": "Discovery",
-      "request": {
-        "method": "GET",
-        "url": "{{issuer}}/.well-known/openid-configuration"
-      }
-    }
-  ]
-}
-```
+Importe no Postman e ajuste a variável `issuer` — `http://localhost:8081` para a
+execução local, ou o output `issuer` do Terraform para homologação e produção. A
+coleção cobre os três resultados do endpoint de token (`200`, `400` e `401`) mais o
+JWKS e o discovery.
 
 ## Execução local
 

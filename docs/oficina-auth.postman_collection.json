@@ -1,0 +1,93 @@
+{
+  "info": {
+    "name": "oficina-auth",
+    "description": "Autenticação de clientes da oficina por CPF. Defina a variável issuer: http://localhost:8081 para execução local, ou o output issuer do Terraform para homologação e produção. Os CPFs das variáveis cpf_ativo e cpf_inativo correspondem ao seed documentado no README.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "issuer",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "cpf_ativo",
+      "value": "529.982.247-25"
+    },
+    {
+      "key": "cpf_inativo",
+      "value": "111.444.777-35"
+    }
+  ],
+  "item": [
+    {
+      "name": "Token — CPF válido e cliente ativo (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_ativo}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "Devolve access_token, token_type e expires_in."
+      }
+    },
+    {
+      "name": "Token — CPF inválido (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"000\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "Reprovado nos dígitos verificadores: error invalid_request."
+      }
+    },
+    {
+      "name": "Token — cliente inativo (401)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_inativo}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "CPF válido, mas status diferente de ATIVO: error invalid_grant. A mesma resposta sai para CPF sem cadastro, de propósito, para não revelar quem existe."
+      }
+    },
+    {
+      "name": "JWKS",
+      "request": {
+        "method": "GET",
+        "url": "{{issuer}}/.well-known/jwks.json",
+        "description": "Chaves públicas para validação offline dos tokens."
+      }
+    },
+    {
+      "name": "Discovery",
+      "request": {
+        "method": "GET",
+        "url": "{{issuer}}/.well-known/openid-configuration",
+        "description": "Metadados do emissor: issuer, jwks_uri e token_endpoint."
+      }
+    }
+  ]
+}
