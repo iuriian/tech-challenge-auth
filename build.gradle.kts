@@ -146,6 +146,7 @@ spotless {
             "Dockerfile",
             ".github/**/*.yml",
             "docs/**/*.json",
+            "docs/**/*.md",
             "sql/**/*.sql",
             "terraform/**/*.tf",
             "terraform/**/*.tftpl",
