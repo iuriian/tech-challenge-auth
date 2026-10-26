@@ -40,106 +40,20 @@ prova identidade contra o cadastro, não posse de um segredo. Ver
 
 ## Arquitetura
 
-### Camadas (hexagonal)
+Arquitetura hexagonal em quatro camadas, com as dependências sempre apontando para o
+domínio, servida no Cloud Run atrás de um API Gateway. As regras de camada são teste
+executável (Konsist), não convenção.
 
-Quatro camadas, com as dependências sempre apontando para o domínio. As regras não
-são convenção: estão expressas como teste executável em
-`src/test/kotlin/.../architecture/ArquiteturaTest.kt` (Konsist) — o domínio não
-conhece nenhuma outra camada nem framework algum, as portas da aplicação não expõem
-detalhes técnicos, e a infraestrutura não depende da apresentação.
+Diagramas em **[docs/arquitetura.md](docs/arquitetura.md)**:
 
-```mermaid
-flowchart TB
-    subgraph P["presentation"]
-        SV["Servidor<br/>Ktor CIO"]
-        AR["AuthRoutes"]
-    end
-    subgraph A["application"]
-        UC["AutenticarClienteUseCase"]
-        PE["porta<br/>EmissorDeToken"]
-        PC["porta<br/>ChavesPublicas"]
-    end
-    subgraph D["domain"]
-        CPF["CPF"]
-        CLI["Cliente<br/>StatusCliente"]
-        PR["porta<br/>ClienteRepository"]
-    end
-    subgraph I["infrastructure"]
-        JR["JdbcClienteRepository"]
-        NT["NimbusTokenAdapter"]
-        CF["TokenSettings<br/>DatabaseSettings"]
-        DI["Modules (Koin)"]
-    end
-
-    SV --> AR
-    AR --> UC
-    AR --> PC
-    UC --> PR
-    UC --> PE
-    UC --> CPF
-    UC --> CLI
-    JR -.implementa.-> PR
-    NT -.implementa.-> PE
-    NT -.implementa.-> PC
-    DI -.monta o grafo.-> AR
-
-    classDef dom fill:#1f6f43,stroke:#0d3b24,color:#fff
-    classDef app fill:#1f4e79,stroke:#102a43,color:#fff
-    classDef inf fill:#6b4c9a,stroke:#3b2a57,color:#fff
-    classDef pre fill:#8a5a1b,stroke:#4d3110,color:#fff
-    class CPF,CLI,PR dom
-    class UC,PE,PC app
-    class JR,NT,CF,DI inf
-    class SV,AR pre
-```
-
-As setas pontilhadas são as inversões: `JdbcClienteRepository` e
-`NimbusTokenAdapter` vivem na infraestrutura mas implementam contratos declarados
-nas camadas de dentro. Trocar Postgres por outro banco, ou Nimbus por outra
-biblioteca de JOSE, não toca domínio nem aplicação.
-
-### Runtime no GCP
-
-```mermaid
-flowchart LR
-    CONS["Serviços consumidores<br/>(app no GKE)"]
-    GW["API Gateway<br/>oficina-auth-gw"]
-    CR["Cloud Run<br/>oficina-auth<br/>SA auth-fn"]
-    SM["Secret Manager<br/>jwt-signing-key<br/>db-auth-password"]
-    VPC["VPC connector<br/>auth-connector"]
-    DB[("Cloud SQL<br/>papel auth_ro")]
-    AR["Artifact Registry<br/>oficina-auth"]
-
-    CONS -->|"POST /auth/token"| GW
-    GW -->|"IAM: SA auth-gateway<br/>roles/run.invoker"| CR
-    CR -->|"monta como env var"| SM
-    CR -->|"egress private-ranges-only"| VPC
-    VPC -->|"SELECT, só leitura"| DB
-    AR -.->|"imagem da revisão"| CR
-    CONS -.->|"GET /.well-known/jwks.json<br/>valida o token offline"| GW
-```
-
-O Cloud Run roda com `--no-allow-unauthenticated`: o único chamador autorizado é a
-service account do gateway. O acesso ao banco é só leitura em três níveis — o papel
-`auth_ro` tem `SELECT` em quatro colunas e `default_transaction_read_only`, e o pool
-do Hikari sobe com `isReadOnly`.
-
-### Fluxo de uma emissão
-
-```mermaid
-sequenceDiagram
-    participant C as Consumidor
-    participant G as API Gateway
-    participant S as Cloud Run (auth)
-    participant DB as Cloud SQL
-    C->>G: POST /auth/token {cpf}
-    G->>S: repassa autenticado por IAM
-    S->>S: CPF.parse — dígitos verificadores
-    S->>DB: SELECT id, nome, status FROM cliente
-    DB-->>S: cadastro
-    S->>S: status ATIVO? assina RS256 com kid
-    S-->>C: 200 {access_token, token_type, expires_in}
-```
+- [Camadas (hexagonal)](docs/arquitetura.md#camadas-hexagonal) — os pacotes, as
+  portas e onde estão as inversões de dependência
+- [Runtime no GCP](docs/arquitetura.md#runtime-no-gcp) — gateway, Cloud Run, Secret
+  Manager, VPC connector e Cloud SQL
+- [Fluxo de uma emissão](docs/arquitetura.md#fluxo-de-uma-emissão) — o caminho de um
+  `POST /auth/token`
+- [Fluxo de entrega](docs/arquitetura.md#fluxo-de-entrega) — o gitflow e a promoção
+  por digest
 
 ## API — Swagger e Postman
 
@@ -344,7 +258,8 @@ secret `GCP_SA_KEY`.
 
 ### 3. Pipeline
 
-Gitflow, com um workflow por responsabilidade.
+Gitflow, com um workflow por responsabilidade — ver o
+[fluxo de entrega](docs/arquitetura.md#fluxo-de-entrega).
 
 | Workflow | Dispara em | Faz |
 | --- | --- | --- |
@@ -352,15 +267,6 @@ Gitflow, com um workflow por responsabilidade.
 | `cd-homolog.yml` | push em `release/**`; manual | Chama o CI, constrói e publica a imagem, faz deploy em homologação, roda smoke test |
 | `cd-prod.yml` | push em `main`; manual | Resolve o digest da revisão no ar em homologação, promove **essa** imagem para produção, roda smoke test |
 
-```mermaid
-flowchart LR
-    F["feature/*"] -->|"PR: ci.yml"| DV["develop"]
-    DV --> R["release/*"]
-    R -->|"cd-homolog.yml<br/>build + push + deploy"| H["Homologação"]
-    R -->|"PR: ci.yml"| M["main"]
-    M -->|"cd-prod.yml<br/>promove por digest"| PR2["Produção"]
-    H -.->|"digest da revisão no ar"| PR2
-```
 
 Produção nunca constrói imagem. O `cd-prod.yml` lê o digest do que está servindo em
 homologação e faz deploy dele, então o artefato aprovado é bit a bit o artefato
