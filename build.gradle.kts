@@ -7,6 +7,7 @@ plugins {
     id("com.gradleup.shadow") version "9.2.2"
     id("com.diffplug.spotless") version "7.0.4"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
+    jacoco
 }
 
 group = "br.com.fiap.oficina"
@@ -59,7 +60,58 @@ tasks.named<JavaExec>("run") {
     environment("PORT", "8081")
 }
 
-tasks.test { useJUnitPlatform() }
+jacoco { toolVersion = "0.8.13" }
+
+// O relatório é subproduto da própria execução dos testes: medir cobertura num
+// segundo ./gradlew test dobraria o tempo do pipeline sem medir nada diferente.
+tasks.test {
+    useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+// main() sobe um servidor de verdade e nenhum teste o executa sem subir o
+// processo. O ServidorTest cobre o que dá para cobrir (porta e mainClass) por
+// reflexão; manter a classe no denominador só empurraria o mínimo para baixo.
+val classesMedidas =
+    files(
+        sourceSets.main
+            .get()
+            .output.classesDirs.files
+            .map { fileTree(it) { exclude("**/presentation/ServidorKt*.class") } },
+    )
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    classDirectories.setFrom(classesMedidas)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
+}
+
+// Os mínimos ficam abaixo do medido de propósito: as lambdas suspend do Ktor e
+// os blocos do Koin têm caminhos de retomada que o Jacoco nunca marca, então um
+// teto apertado quebraria o build a cada rota nova sem nada a corrigir.
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    classDirectories.setFrom(classesMedidas)
+
+    violationRules {
+        rule {
+            limit {
+                counter = "INSTRUCTION"
+                minimum = "0.90".toBigDecimal()
+            }
+            limit {
+                counter = "BRANCH"
+                minimum = "0.80".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.check { dependsOn(tasks.jacocoTestCoverageVerification) }
 
 tasks.shadowJar {
     archiveClassifier.set("all")

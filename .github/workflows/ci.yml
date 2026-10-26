@@ -62,7 +62,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - run: ./gradlew test --no-daemon
+      - run: ./gradlew test jacocoTestCoverageVerification --no-daemon
 
       - name: Relatórios dos testes
         if: failure()
@@ -72,6 +72,16 @@ jobs:
           path: |
             build/reports/tests/
             build/test-results/
+          if-no-files-found: ignore
+
+      # Sempre, não só na falha: o relatório é a evidência da cobertura, e numa
+      # execução verde é justamente quando se quer consultá-lo.
+      - name: Relatório de cobertura (Jacoco)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/
           if-no-files-found: ignore
 
   empacotamento:
