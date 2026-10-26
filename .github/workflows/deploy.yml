@@ -1,0 +1,98 @@
+name: deploy-auth
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
+      - "gradlew"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-auth
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Testes e fat JAR
+        run: ./gradlew test shadowJar --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: function-jar
+          path: build/libs/*-all.jar
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.REGION }}
+      FUNCTION: oficina-auth
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: function-jar
+          path: deploy
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy da função
+        run: |
+          gcloud functions deploy "$FUNCTION" \
+            --gen2 \
+            --project="$PROJECT" \
+            --region="$REGION" \
+            --runtime=java21 \
+            --source=deploy \
+            --entry-point=br.com.fiap.oficina.auth.presentation.AuthFunction \
+            --trigger-http \
+            --no-allow-unauthenticated \
+            --service-account="auth-fn@${PROJECT}.iam.gserviceaccount.com" \
+            --build-service-account="projects/${PROJECT}/serviceAccounts/auth-build@${PROJECT}.iam.gserviceaccount.com" \
+            --vpc-connector=auth-connector \
+            --egress-settings=private-ranges-only \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=15s \
+            --min-instances=0 \
+            --max-instances=5 \
+            --set-env-vars="ISSUER=${{ vars.AUTH_ISSUER }},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${{ vars.DB_URL }},DB_USER=auth_ro" \
+            --set-secrets="JWT_PRIVATE_KEY=jwt-signing-key:latest,DB_PASSWORD=db-auth-password:latest"
+
+      - name: Permitir invocação apenas pelo API Gateway
+        run: |
+          gcloud functions add-invoker-policy-binding "$FUNCTION" \
+            --project="$PROJECT" \
+            --region="$REGION" \
+            --member="serviceAccount:auth-gateway@${PROJECT}.iam.gserviceaccount.com"
+
+      - name: Smoke test
+        run: |
+          curl -fsS "${{ vars.AUTH_ISSUER }}/.well-known/jwks.json" | jq -e '.keys | length > 0'
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' -d '{"cpf":"000"}' \
+            "${{ vars.AUTH_ISSUER }}/auth/token")
+          test "$STATUS" = "400"
