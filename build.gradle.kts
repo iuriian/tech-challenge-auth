@@ -3,6 +3,7 @@ import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
 
 plugins {
     kotlin("jvm") version "2.2.20"
+    application
     id("com.gradleup.shadow") version "9.2.2"
     id("com.diffplug.spotless") version "7.0.4"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
@@ -15,11 +16,13 @@ repositories { mavenCentral() }
 
 val ktlintVersion = "1.6.0"
 
-val invoker: Configuration by configurations.creating
-
 dependencies {
-    // Fornecido em runtime pelo invoker empacotado na imagem — não vai no fat JAR
-    compileOnly("com.google.cloud.functions:functions-framework-api:1.1.4")
+    implementation(platform("io.ktor:ktor-bom:3.6.0"))
+    implementation("io.ktor:ktor-server-core")
+    // CIO: engine em coroutines puras, sem Netty. São menos classes para
+    // carregar na partida, o que importa com min-instances=0 no Cloud Run.
+    implementation("io.ktor:ktor-server-cio")
+    implementation("io.ktor:ktor-server-status-pages")
 
     implementation(platform("io.insert-koin:koin-bom:4.1.1"))
     implementation("io.insert-koin:koin-core")
@@ -28,41 +31,39 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.8")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.20.0")
 
-    // Servidor HTTP da imagem do Cloud Run e do ./gradlew runFunction
-    invoker("com.google.cloud.functions.invoker:java-function-invoker:1.4.1")
+    // O Ktor loga via SLF4J; a ponte entrega tudo ao java.util.logging, que é o
+    // logger do resto do projeto e cai no stdout coletado pelo Cloud Logging.
+    runtimeOnly("org.slf4j:slf4j-jdk14:2.0.20")
 
-    testImplementation("com.google.cloud.functions:functions-framework-api:1.1.4")
     testImplementation(kotlin("test"))
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("io.ktor:ktor-server-test-host")
     testImplementation("io.insert-koin:koin-test")
     testImplementation("com.lemonappdev:konsist:0.17.3")
 }
 
 kotlin { jvmToolchain(21) }
 
-tasks.test { useJUnitPlatform() }
-
-// O invoker vai junto na imagem do Cloud Run (ver Dockerfile), por isso é
-// copiado para build/invoker/ sempre que o fat JAR é gerado.
-tasks.register<Copy>("copiarInvoker") {
-    from(invoker)
-    into(layout.buildDirectory.dir("invoker"))
+application {
+    // Classe gerada pelo Kotlin para o main() de Servidor.kt. É esse nome que o
+    // shadowJar grava no Main-Class do manifesto — o Dockerfile só faz -jar.
+    mainClass.set("br.com.fiap.oficina.auth.presentation.ServidorKt")
 }
+
+// ./gradlew run sobe o servidor local na 8081 e deixa a 8080 livre para o
+// restante do stack rodando na máquina.
+tasks.named<JavaExec>("run") {
+    description = "Sobe o servidor localmente na porta 8081"
+    environment("PORT", "8081")
+}
+
+tasks.test { useJUnitPlatform() }
 
 tasks.shadowJar {
     archiveClassifier.set("all")
-    mergeServiceFiles() // preserva META-INF/services do driver JDBC
-    finalizedBy("copiarInvoker")
-}
-
-tasks.register<JavaExec>("runFunction") {
-    group = "application"
-    description = "Sobe a função localmente na porta 8081"
-    mainClass.set("com.google.cloud.functions.invoker.runner.Invoker")
-    classpath = files(invoker) + sourceSets["main"].runtimeClasspath
-    args("--target", "br.com.fiap.oficina.auth.presentation.AuthFunction", "--port", "8081")
+    mergeServiceFiles() // preserva META-INF/services do driver JDBC e do Ktor
 }
 
 // Spotless é o único formatador do projeto e usa o ktlint como engine.

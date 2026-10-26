@@ -58,7 +58,7 @@ class ArquiteturaTest {
                     importe.startsWith("$raiz.infrastructure") ||
                         importe.startsWith("$raiz.presentation") ||
                         importe.startsWith("com.nimbusds") ||
-                        importe.startsWith("com.google.cloud") ||
+                        importe.startsWith("io.ktor") ||
                         importe.startsWith("java.sql") ||
                         importe.startsWith("javax.sql")
                 }
@@ -71,7 +71,7 @@ class ArquiteturaTest {
         val proibidos =
             listOf(
                 "com.nimbusds",
-                "com.google.cloud",
+                "io.ktor",
                 "com.zaxxer",
                 "org.koin",
                 "javax.sql",

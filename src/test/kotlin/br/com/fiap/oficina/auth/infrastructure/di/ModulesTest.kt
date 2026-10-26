@@ -9,7 +9,7 @@ import br.com.fiap.oficina.auth.infrastructure.config.DatabaseSettings
 import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
 import br.com.fiap.oficina.auth.infrastructure.persistence.JdbcClienteRepository
 import br.com.fiap.oficina.auth.infrastructure.token.NimbusTokenAdapter
-import br.com.fiap.oficina.auth.presentation.http.AuthHttpHandler
+import br.com.fiap.oficina.auth.presentation.http.AuthRoutes
 import br.com.fiap.oficina.auth.presentation.http.TokenRequest
 import br.com.fiap.oficina.auth.support.ChavesDeTeste
 import br.com.fiap.oficina.auth.support.FakeDataSource
@@ -66,8 +66,8 @@ class ModulesTest {
     }
 
     @Test
-    fun `o handler HTTP e resolvido com todas as dependencias`() {
-        koin().get<AuthHttpHandler>()
+    fun `as rotas HTTP sao resolvidas com todas as dependencias`() {
+        koin().get<AuthRoutes>()
     }
 
     @Test
@@ -90,10 +90,10 @@ class ModulesTest {
     }
 
     @Test
-    fun `componentes sao singletons - a function reaproveita o container entre invocacoes`() {
+    fun `componentes sao singletons - o container vive enquanto o servidor estiver no ar`() {
         val koin = koin()
 
-        assertSame(koin.get<AuthHttpHandler>(), koin.get<AuthHttpHandler>())
+        assertSame(koin.get<AuthRoutes>(), koin.get<AuthRoutes>())
         assertSame(koin.get<AutenticarClienteUseCase>(), koin.get<AutenticarClienteUseCase>())
         assertSame(koin.get<ClienteRepository>(), koin.get<ClienteRepository>())
     }

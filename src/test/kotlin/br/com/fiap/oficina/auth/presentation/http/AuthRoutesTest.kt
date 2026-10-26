@@ -6,11 +6,19 @@ import br.com.fiap.oficina.auth.application.usecase.ResultadoAutenticacao
 import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
 import br.com.fiap.oficina.auth.support.AutenticarClienteUseCaseFake
 import br.com.fiap.oficina.auth.support.CPF_VALIDO
-import br.com.fiap.oficina.auth.support.FakeHttpRequest
-import br.com.fiap.oficina.auth.support.FakeHttpResponse
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.contentType
+import io.ktor.http.withCharset
+import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -20,7 +28,7 @@ import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class AuthHttpHandlerTest {
+class AuthRoutesTest {
     private val mapper =
         jacksonObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
@@ -30,7 +38,7 @@ class AuthHttpHandlerTest {
             issuer = "https://auth.oficina.dev",
             audience = "oficina",
             ttl = Duration.ofHours(1),
-            privateKeyPem = "irrelevante-para-o-handler",
+            privateKeyPem = "irrelevante-para-as-rotas",
         )
 
     private val chaves =
@@ -44,19 +52,58 @@ class AuthHttpHandlerTest {
 
     private val useCase get() = AutenticarClienteUseCaseFake(resposta)
 
+    private val jsonUtf8 =
+        ContentType.Application.Json
+            .withCharset(Charsets.UTF_8)
+            .toString()
+
+    /**
+     * Resposta já materializada: o cliente de teste só existe dentro do escopo do [testApplication],
+     * então o corpo é lido antes de o servidor cair.
+     */
+    private class Resposta(
+        val status: Int,
+        val corpo: String,
+        val tipoDeConteudo: String?,
+        private val cabecalhos: Headers,
+    ) {
+        fun cabecalho(nome: String): String? = cabecalhos[nome]
+    }
+
     private fun chamar(
         metodo: String,
         caminho: String,
         corpo: String = "",
         casoDeUso: AutenticarClienteUseCaseFake = useCase,
-    ): FakeHttpResponse {
-        val res = FakeHttpResponse()
-        AuthHttpHandler(casoDeUso, chaves, settings, mapper)
-            .handle(FakeHttpRequest(metodo, caminho, corpo), res)
-        return res
+        chavesPublicas: ChavesPublicas = chaves,
+    ): Resposta {
+        lateinit var capturada: Resposta
+
+        testApplication {
+            application { AuthRoutes(casoDeUso, chavesPublicas, settings, mapper).configurar(this) }
+
+            val http =
+                client.request(caminho) {
+                    method = HttpMethod.parse(metodo)
+                    if (corpo.isNotEmpty()) {
+                        contentType(ContentType.Application.Json)
+                        setBody(corpo)
+                    }
+                }
+
+            capturada =
+                Resposta(
+                    status = http.status.value,
+                    corpo = http.bodyAsText(),
+                    tipoDeConteudo = http.contentType()?.toString(),
+                    cabecalhos = http.headers,
+                )
+        }
+
+        return capturada
     }
 
-    private fun FakeHttpResponse.json(): JsonNode = mapper.readTree(corpo)
+    private fun Resposta.json(): JsonNode = mapper.readTree(corpo)
 
     @Nested
     inner class EmissaoDeToken {
@@ -65,7 +112,7 @@ class AuthHttpHandlerTest {
             val res = chamar("POST", "/auth/token", """{"cpf":"$CPF_VALIDO"}""")
 
             assertEquals(200, res.status)
-            assertEquals("application/json; charset=utf-8", res.tipoDeConteudo)
+            assertEquals(jsonUtf8, res.tipoDeConteudo)
             with(res.json()) {
                 assertEquals("token-assinado", get("access_token").asText())
                 assertEquals("Bearer", get("token_type").asText())
@@ -77,7 +124,7 @@ class AuthHttpHandlerTest {
         fun `resposta com token nunca pode ser cacheada`() {
             val res = chamar("POST", "/auth/token", """{"cpf":"$CPF_VALIDO"}""")
 
-            assertEquals("no-store", res.cabecalho("Cache-Control"))
+            assertEquals("no-store", res.cabecalho(HttpHeaders.CacheControl))
         }
 
         @Test
@@ -114,7 +161,7 @@ class AuthHttpHandlerTest {
             assertEquals(400, res.status)
             assertEquals("invalid_request", res.json().get("error").asText())
             assertEquals("CPF inválido", res.json().get("error_description").asText())
-            assertEquals("no-store", res.cabecalho("Cache-Control"))
+            assertEquals("no-store", res.cabecalho(HttpHeaders.CacheControl))
         }
 
         @Test
@@ -191,8 +238,8 @@ class AuthHttpHandlerTest {
             val res = chamar("GET", "/.well-known/jwks.json")
 
             assertEquals(200, res.status)
-            assertEquals("application/json; charset=utf-8", res.tipoDeConteudo)
-            assertEquals("public, max-age=300", res.cabecalho("Cache-Control"))
+            assertEquals(jsonUtf8, res.tipoDeConteudo)
+            assertEquals("public, max-age=300", res.cabecalho(HttpHeaders.CacheControl))
             assertEquals(
                 "abc",
                 res
@@ -209,7 +256,7 @@ class AuthHttpHandlerTest {
             val res = chamar("GET", "/.well-known/openid-configuration")
 
             assertEquals(200, res.status)
-            assertEquals("public, max-age=3600", res.cabecalho("Cache-Control"))
+            assertEquals("public, max-age=3600", res.cabecalho(HttpHeaders.CacheControl))
             with(res.json()) {
                 assertEquals("https://auth.oficina.dev", get("issuer").asText())
                 assertEquals(
@@ -240,6 +287,7 @@ class AuthHttpHandlerTest {
             "GET, /.well-known/jwks.json, 200",
             "GET, /.well-known/jwks.json/, 200",
             "GET, /.well-known/openid-configuration, 200",
+            "GET, /v1/.well-known/openid-configuration, 200",
         )
         fun `rotas conhecidas respondem - prefixo do gateway e barra final toleradas`(
             metodo: String,
@@ -288,7 +336,7 @@ class AuthHttpHandlerTest {
                 res.json().get("error_description").asText(),
             )
             assertTrue("segredo" !in res.corpo, "detalhe interno vazou: ${res.corpo}")
-            assertEquals("no-store", res.cabecalho("Cache-Control"))
+            assertEquals("no-store", res.cabecalho(HttpHeaders.CacheControl))
         }
 
         @Test
@@ -297,10 +345,13 @@ class AuthHttpHandlerTest {
                 object : ChavesPublicas {
                     override fun jwks(): String = error("chave indisponivel")
                 }
-            val res = FakeHttpResponse()
 
-            AuthHttpHandler(useCase, chavesQuebradas, settings, mapper)
-                .handle(FakeHttpRequest("GET", "/.well-known/jwks.json"), res)
+            val res =
+                chamar(
+                    "GET",
+                    "/.well-known/jwks.json",
+                    chavesPublicas = chavesQuebradas,
+                )
 
             assertEquals(503, res.status)
             assertEquals("temporarily_unavailable", res.json().get("error").asText())
@@ -309,8 +360,8 @@ class AuthHttpHandlerTest {
 
     @Test
     fun `caminhos publicos estao definidos como constantes do contrato`() {
-        assertEquals("/auth/token", AuthHttpHandler.TOKEN_PATH)
-        assertEquals("/.well-known/jwks.json", AuthHttpHandler.JWKS_PATH)
-        assertEquals("/.well-known/openid-configuration", AuthHttpHandler.DISCOVERY_PATH)
+        assertEquals("/auth/token", AuthRoutes.TOKEN_PATH)
+        assertEquals("/.well-known/jwks.json", AuthRoutes.JWKS_PATH)
+        assertEquals("/.well-known/openid-configuration", AuthRoutes.DISCOVERY_PATH)
     }
 }

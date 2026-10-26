@@ -10,7 +10,7 @@ import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
 import br.com.fiap.oficina.auth.infrastructure.persistence.DataSourceFactory
 import br.com.fiap.oficina.auth.infrastructure.persistence.JdbcClienteRepository
 import br.com.fiap.oficina.auth.infrastructure.token.NimbusTokenAdapter
-import br.com.fiap.oficina.auth.presentation.http.AuthHttpHandler
+import br.com.fiap.oficina.auth.presentation.http.AuthRoutes
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -52,7 +52,7 @@ val applicationModule =
 
 val entrypointModule =
     module {
-        singleOf(::AuthHttpHandler)
+        singleOf(::AuthRoutes)
     }
 
 val authModules = listOf(configModule, infrastructureModule, applicationModule, entrypointModule)

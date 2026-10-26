@@ -50,13 +50,11 @@ jobs:
       - name: Testes e fat JAR
         run: ./gradlew test shadowJar --no-daemon
 
-      # Exatamente o que o Dockerfile copia: o fat JAR e o invoker.
+      # Exatamente o que o Dockerfile copia: o fat JAR com o servidor embutido.
       - uses: actions/upload-artifact@v4
         with:
           name: imagem-context
-          path: |
-            build/libs/*-all.jar
-            build/invoker/
+          path: build/libs/*-all.jar
           if-no-files-found: error
 
   deploy:

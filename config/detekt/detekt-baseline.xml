@@ -2,11 +2,6 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$200</ID>
-    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$400</ID>
-    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$401</ID>
-    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$404</ID>
-    <ID>MagicNumber:AuthHttpHandler.kt$AuthHttpHandler$503</ID>
     <ID>MagicNumber:CPF.kt$CPF$3</ID>
     <ID>MagicNumber:CPF.kt$CPF$6</ID>
     <ID>MagicNumber:CPF.kt$CPF$9</ID>
