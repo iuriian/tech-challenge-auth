@@ -13,9 +13,9 @@ class DataSourceFactoryTest {
             password = "segredo",
         )
 
+    /** initializationFailTimeout negativo permite subir o servico mesmo com o banco fora. */
     @Test
     fun `pool e criado sem exigir banco disponivel na inicializacao`() {
-        // initializationFailTimeout negativo permite subir a function mesmo com o banco fora.
         DataSourceFactory.criar(settings).use { pool ->
             assertEquals(-1, pool.initializationFailTimeout)
             assertTrue(!pool.isClosed)
@@ -31,7 +31,7 @@ class DataSourceFactoryTest {
     }
 
     @Test
-    fun `pool e somente leitura - a function nunca escreve no banco`() {
+    fun `pool e somente leitura - o servico nunca escreve no banco`() {
         DataSourceFactory.criar(settings).use { pool ->
             assertTrue(pool.isReadOnly)
         }

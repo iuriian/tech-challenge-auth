@@ -105,9 +105,9 @@ class ArquiteturaTest {
             .assertTrue { it.resideInPackage("..application.usecase..") }
     }
 
+    /** Interfaces seladas na mesma camada modelam resultados, nao contratos de entrada. */
     @Test
     fun `contratos de caso de uso terminam com UseCase`() {
-        // Interfaces seladas na mesma camada modelam resultados, nao contratos de entrada.
         producao
             .interfaces()
             .filter { it.resideInPackage("..application.usecase..") && !it.hasSealedModifier }

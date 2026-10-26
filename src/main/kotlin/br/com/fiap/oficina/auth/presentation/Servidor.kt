@@ -11,6 +11,10 @@ import org.koin.dsl.koinApplication
 /**
  * Ponto de entrada da imagem: o Main-Class do fat JAR aponta para a classe gerada a partir deste
  * arquivo (ver `mainClass` no build.gradle.kts).
+ *
+ * O shutdown hook existe porque o Cloud Run manda SIGTERM antes de recolher a instância: sem ele a
+ * JVM morre sem disparar `ApplicationStopped`, e o pool do Hikari fica pendurado no banco até o
+ * servidor expirar as conexões.
  */
 fun main() {
     val koin = koinApplication { modules(authModules) }.koin
@@ -21,9 +25,6 @@ fun main() {
             koin.get<AuthRoutes>().configurar(this)
         }
 
-    // O Cloud Run manda SIGTERM antes de recolher a instância. Sem o hook a JVM
-    // morre sem disparar ApplicationStopped, e o pool do Hikari fica pendurado no
-    // banco até o servidor expirar as conexões.
     servidor.addShutdownHook { servidor.stop(CARENCIA_MS, LIMITE_MS) }
     servidor.start(wait = true)
 }

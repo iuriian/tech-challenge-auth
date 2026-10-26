@@ -39,14 +39,22 @@ class AuthRoutes(
     private val settings: TokenSettings,
     private val mapper: ObjectMapper,
 ) {
+    /**
+     * Instala os plugins e registra as rotas na aplicação.
+     *
+     * O `IgnoreTrailingSlash` está aqui porque clientes gerados e curl mandam `/auth/token/` sem
+     * avisar, embora o API Gateway repasse o caminho exato declarado no OpenAPI.
+     *
+     * O `StatusPages` concentra as respostas que não saem de uma rota. O catch amplo é deliberado:
+     * qualquer falha inesperada vira 503 e o detalhe (mensagem de driver com credencial, por
+     * exemplo) fica só no log. Método inesperado em rota conhecida responde como rota inexistente,
+     * porque o contrato publicado no gateway não prevê 405 e o 404 não conta ao cliente quais
+     * métodos existem.
+     */
     fun configurar(app: Application) {
-        // O API Gateway repassa o caminho exato declarado no OpenAPI, mas clientes
-        // gerados e curl mandam /auth/token/ sem avisar.
         app.install(IgnoreTrailingSlash)
 
         app.install(StatusPages) {
-            // O catch amplo é deliberado: qualquer falha inesperada vira 503 e o
-            // detalhe (mensagem de driver com credencial, por exemplo) fica no log.
             exception<Throwable> { call, causa ->
                 log.log(
                     Level.SEVERE,
@@ -56,9 +64,6 @@ class AuthRoutes(
                 call.erro(HttpStatusCode.ServiceUnavailable, "temporarily_unavailable", INDISPONIVEL)
             }
 
-            // Método inesperado em rota conhecida responde como rota inexistente: o
-            // contrato publicado no gateway não prevê 405, e o 404 não conta ao
-            // cliente quais métodos existem.
             status(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed) { call, _ ->
                 call.erro(HttpStatusCode.NotFound, "not_found", "Rota inexistente")
             }
@@ -81,11 +86,13 @@ class AuthRoutes(
         }
     }
 
+    /**
+     * O caso de uso é bloqueante (consulta JDBC e assinatura RSA), por isso roda no dispatcher de
+     * I/O: no event loop do CIO ele prenderia as threads do servidor.
+     */
     private suspend fun ApplicationCall.emitirToken() {
         val cpf = runCatching { mapper.readValue<TokenRequest>(receiveText()).cpf }.getOrNull()
 
-        // O caso de uso é bloqueante (consulta JDBC e assinatura RSA). Fora do
-        // dispatcher de I/O ele prenderia as threads do event loop do CIO.
         val resultado = withContext(Dispatchers.IO) { autenticar.executar(cpf) }
 
         when (resultado) {
@@ -146,8 +153,11 @@ class AuthRoutes(
         const val JWKS_PATH = "/.well-known/jwks.json"
         const val DISCOVERY_PATH = "/.well-known/openid-configuration"
 
-        // Cada rota é registrada também sob um primeiro segmento livre, para o caso
-        // de o gateway passar a expor tudo atrás de um prefixo de versão.
+        /**
+         * Prefixos sob os quais cada rota é registrada: o caminho declarado e, além dele, um
+         * primeiro segmento livre, para o caso de o gateway passar a expor tudo atrás de um
+         * prefixo de versão.
+         */
         private val PREFIXOS = listOf("", "/{prefixo}")
 
         private val JSON_UTF8 = ContentType.Application.Json.withCharset(Charsets.UTF_8)

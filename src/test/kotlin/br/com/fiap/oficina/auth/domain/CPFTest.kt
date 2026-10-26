@@ -57,9 +57,9 @@ class CPFTest {
             assertNull(CPF.parse(entrada), "esperava null para '$entrada'")
         }
 
+        /** 00000000000 satisfaz o calculo dos verificadores, mas nao e um CPF real. */
         @Test
         fun `rejeita sequencias de digitos repetidos mesmo quando passariam no calculo`() {
-            // 00000000000 satisfaz o calculo dos verificadores, mas nao e um CPF real.
             assertNull(CPF.parse("00000000000"))
         }
 

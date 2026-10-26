@@ -11,8 +11,10 @@ import javax.sql.DataSource
 class JdbcClienteRepository(
     private val ds: DataSource,
 ) : ClienteRepository {
-    // O aninhamento são os três `use` de connection, statement e result set: é o
-    // contrato de fechamento de recursos do JDBC, não complexidade acidental.
+    /**
+     * O aninhamento são os três `use` de connection, statement e result set: é o contrato de
+     * fechamento de recursos do JDBC, não complexidade acidental.
+     */
     @Suppress("NestedBlockDepth")
     override fun buscarPorCpf(cpf: CPF): Cliente? =
         ds.connection.use { conn ->
