@@ -17,11 +17,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class AutenticarClienteUseCaseImplTest {
-
     private val emissor = EmissorDeTokenFake(TokenEmitido("token-assinado", 900))
 
-    private fun useCase(clientes: ClienteRepositoryFake) =
-        AutenticarClienteUseCaseImpl(clientes, emissor)
+    private fun useCase(clientes: ClienteRepositoryFake) = AutenticarClienteUseCaseImpl(clientes, emissor)
 
     @Test
     fun `cliente ativo recebe token emitido`() {

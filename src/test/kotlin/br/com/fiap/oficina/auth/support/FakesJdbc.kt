@@ -6,9 +6,9 @@ import java.sql.ResultSet
 import java.sql.SQLException
 import javax.sql.DataSource
 
-internal class FakeResultSet(private val linhas: List<Map<String, String?>>) :
-    ResultSet by naoImplementado() {
-
+internal class FakeResultSet(
+    private val linhas: List<Map<String, String?>>,
+) : ResultSet by naoImplementado() {
     private var indice = -1
     var fechado = false
         private set
@@ -31,12 +31,14 @@ internal class FakePreparedStatement(
     private val resultado: FakeResultSet,
     private val falha: SQLException?,
 ) : PreparedStatement by naoImplementado() {
-
     val parametros = mutableMapOf<Int, String?>()
     var fechado = false
         private set
 
-    override fun setString(parameterIndex: Int, x: String?) {
+    override fun setString(
+        parameterIndex: Int,
+        x: String?,
+    ) {
         parametros[parameterIndex] = x
     }
 
@@ -51,7 +53,6 @@ internal class FakeConnection(
     private val resultado: FakeResultSet,
     private val falha: SQLException?,
 ) : Connection by naoImplementado() {
-
     var statement: FakePreparedStatement? = null
         private set
     var fechada = false
@@ -69,7 +70,6 @@ internal class FakeDataSource(
     linhas: List<Map<String, String?>> = emptyList(),
     falha: SQLException? = null,
 ) : DataSource by naoImplementado() {
-
     val resultado = FakeResultSet(linhas)
     val conexao = FakeConnection(resultado, falha)
     var conexoesSolicitadas = 0

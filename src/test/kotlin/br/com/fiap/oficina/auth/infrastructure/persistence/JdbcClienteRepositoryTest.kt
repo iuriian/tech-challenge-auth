@@ -16,7 +16,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class JdbcClienteRepositoryTest {
-
     private val cpf = requireNotNull(CPF.parse(CPF_VALIDO_DIGITOS))
 
     private fun linha(
@@ -76,7 +75,10 @@ class JdbcClienteRepositoryTest {
         "BLOQUEADO, INATIVO",
         "'', INATIVO",
     )
-    fun `status do banco e traduzido pelo dominio`(bruto: String, esperado: StatusCliente) {
+    fun `status do banco e traduzido pelo dominio`(
+        bruto: String,
+        esperado: StatusCliente,
+    ) {
         val ds = FakeDataSource(listOf(linha(status = bruto)))
 
         assertEquals(esperado, JdbcClienteRepository(ds).buscarPorCpf(cpf)?.status)

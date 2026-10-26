@@ -10,11 +10,11 @@ import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
 import br.com.fiap.oficina.auth.infrastructure.persistence.JdbcClienteRepository
 import br.com.fiap.oficina.auth.infrastructure.token.NimbusTokenAdapter
 import br.com.fiap.oficina.auth.presentation.http.AuthHttpHandler
+import br.com.fiap.oficina.auth.presentation.http.TokenRequest
 import br.com.fiap.oficina.auth.support.ChavesDeTeste
 import br.com.fiap.oficina.auth.support.FakeDataSource
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
-import br.com.fiap.oficina.auth.presentation.http.TokenRequest
 import com.zaxxer.hikari.HikariDataSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -35,28 +35,29 @@ import kotlin.test.assertTrue
  * variáveis de ambiente: um erro de wiring aqui só apareceria em produção na primeira requisição.
  */
 class ModulesTest {
-
     private val fonteDeDados = FakeDataSource()
 
-    private val substituicoes = module {
-        single {
-            TokenSettings(
-                issuer = "https://auth.oficina.dev",
-                audience = "oficina",
-                ttl = Duration.ofHours(1),
-                privateKeyPem = ChavesDeTeste.pem2048,
-            )
+    private val substituicoes =
+        module {
+            single {
+                TokenSettings(
+                    issuer = "https://auth.oficina.dev",
+                    audience = "oficina",
+                    ttl = Duration.ofHours(1),
+                    privateKeyPem = ChavesDeTeste.pem2048,
+                )
+            }
+            single<DataSource> { fonteDeDados }
         }
-        single<DataSource> { fonteDeDados }
-    }
 
     private var app: Koin? = null
 
-    private fun koin(): Koin = app ?: koinApplication {
-        allowOverride(true)
-        modules(configModule, infrastructureModule, applicationModule, entrypointModule)
-        modules(substituicoes)
-    }.koin.also { app = it }
+    private fun koin(): Koin =
+        app ?: koinApplication {
+            allowOverride(true)
+            modules(configModule, infrastructureModule, applicationModule, entrypointModule)
+            modules(substituicoes)
+        }.koin.also { app = it }
 
     @AfterEach
     fun fechar() {
@@ -122,29 +123,30 @@ class ModulesTest {
 
     @Test
     fun `fechar o container libera o pool de conexoes`() {
-        val koin = koinApplication {
-            allowOverride(true)
-            modules(configModule, infrastructureModule, applicationModule, entrypointModule)
-            modules(
-                module {
-                    single {
-                        TokenSettings(
-                            issuer = "https://auth.oficina.dev",
-                            audience = "oficina",
-                            ttl = Duration.ofHours(1),
-                            privateKeyPem = ChavesDeTeste.pem2048,
-                        )
-                    }
-                    single {
-                        DatabaseSettings(
-                            url = "jdbc:postgresql://localhost:5432/oficina",
-                            user = "auth_ro",
-                            password = "segredo",
-                        )
-                    }
-                }
-            )
-        }.koin
+        val koin =
+            koinApplication {
+                allowOverride(true)
+                modules(configModule, infrastructureModule, applicationModule, entrypointModule)
+                modules(
+                    module {
+                        single {
+                            TokenSettings(
+                                issuer = "https://auth.oficina.dev",
+                                audience = "oficina",
+                                ttl = Duration.ofHours(1),
+                                privateKeyPem = ChavesDeTeste.pem2048,
+                            )
+                        }
+                        single {
+                            DatabaseSettings(
+                                url = "jdbc:postgresql://localhost:5432/oficina",
+                                user = "auth_ro",
+                                password = "segredo",
+                            )
+                        }
+                    },
+                )
+            }.koin
 
         val pool = koin.get<DataSource>() as HikariDataSource
         assertFalse(pool.isClosed)

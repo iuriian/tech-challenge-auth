@@ -21,20 +21,22 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AuthHttpHandlerTest {
+    private val mapper =
+        jacksonObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-    private val mapper = jacksonObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+    private val settings =
+        TokenSettings(
+            issuer = "https://auth.oficina.dev",
+            audience = "oficina",
+            ttl = Duration.ofHours(1),
+            privateKeyPem = "irrelevante-para-o-handler",
+        )
 
-    private val settings = TokenSettings(
-        issuer = "https://auth.oficina.dev",
-        audience = "oficina",
-        ttl = Duration.ofHours(1),
-        privateKeyPem = "irrelevante-para-o-handler",
-    )
-
-    private val chaves = object : ChavesPublicas {
-        override fun jwks(): String = """{"keys":[{"kty":"RSA","kid":"abc"}]}"""
-    }
+    private val chaves =
+        object : ChavesPublicas {
+            override fun jwks(): String = """{"keys":[{"kty":"RSA","kid":"abc"}]}"""
+        }
 
     private var resposta: (String?) -> ResultadoAutenticacao = {
         ResultadoAutenticacao.Autenticado(TokenEmitido("token-assinado", 3600))
@@ -58,7 +60,6 @@ class AuthHttpHandlerTest {
 
     @Nested
     inner class EmissaoDeToken {
-
         @Test
         fun `CPF de cliente ativo devolve 200 com token no formato OAuth2`() {
             val res = chamar("POST", "/auth/token", """{"cpf":"$CPF_VALIDO"}""")
@@ -92,12 +93,13 @@ class AuthHttpHandlerTest {
         fun `campos extras no corpo sao ignorados`() {
             val casoDeUso = useCase
 
-            val res = chamar(
-                "POST",
-                "/auth/token",
-                """{"cpf":"$CPF_VALIDO","senha":"123","extra":true}""",
-                casoDeUso,
-            )
+            val res =
+                chamar(
+                    "POST",
+                    "/auth/token",
+                    """{"cpf":"$CPF_VALIDO","senha":"123","extra":true}""",
+                    casoDeUso,
+                )
 
             assertEquals(200, res.status)
             assertEquals(listOf<String?>(CPF_VALIDO), casoDeUso.cpfsRecebidos.toList())
@@ -148,7 +150,7 @@ class AuthHttpHandlerTest {
                 "[]",
                 "{\"cpf\":{\"numero\":1}}",
                 "{\"cpf\":[\"12345678909\"]}",
-            ]
+            ],
         )
         fun `corpo ausente ou malformado e tratado como CPF invalido`(corpo: String) {
             resposta = { ResultadoAutenticacao.CpfInvalido }
@@ -184,7 +186,6 @@ class AuthHttpHandlerTest {
 
     @Nested
     inner class ChavesPublicasEndpoint {
-
         @Test
         fun `jwks e publicado com cache curto`() {
             val res = chamar("GET", "/.well-known/jwks.json")
@@ -192,7 +193,15 @@ class AuthHttpHandlerTest {
             assertEquals(200, res.status)
             assertEquals("application/json; charset=utf-8", res.tipoDeConteudo)
             assertEquals("public, max-age=300", res.cabecalho("Cache-Control"))
-            assertEquals("abc", res.json().get("keys").first().get("kid").asText())
+            assertEquals(
+                "abc",
+                res
+                    .json()
+                    .get("keys")
+                    .first()
+                    .get("kid")
+                    .asText(),
+            )
         }
 
         @Test
@@ -223,7 +232,6 @@ class AuthHttpHandlerTest {
 
     @Nested
     inner class Roteamento {
-
         @ParameterizedTest
         @CsvSource(
             "POST, /auth/token, 200",
@@ -253,7 +261,10 @@ class AuthHttpHandlerTest {
             "GET, /auth/tokens",
             "GET, /.well-known/jwks",
         )
-        fun `rota ou metodo desconhecido devolve 404 not_found`(metodo: String, caminho: String) {
+        fun `rota ou metodo desconhecido devolve 404 not_found`(
+            metodo: String,
+            caminho: String,
+        ) {
             val res = chamar(metodo, caminho)
 
             assertEquals(404, res.status)
@@ -264,7 +275,6 @@ class AuthHttpHandlerTest {
 
     @Nested
     inner class FalhasInesperadas {
-
         @Test
         fun `excecao do caso de uso vira 503 sem expor detalhes internos`() {
             resposta = { throw IllegalStateException("banco fora do ar: senha=segredo") }
@@ -283,9 +293,10 @@ class AuthHttpHandlerTest {
 
         @Test
         fun `falha ao gerar o JWKS tambem vira 503`() {
-            val chavesQuebradas = object : ChavesPublicas {
-                override fun jwks(): String = error("chave indisponivel")
-            }
+            val chavesQuebradas =
+                object : ChavesPublicas {
+                    override fun jwks(): String = error("chave indisponivel")
+                }
             val res = FakeHttpResponse()
 
             AuthHttpHandler(useCase, chavesQuebradas, settings, mapper)

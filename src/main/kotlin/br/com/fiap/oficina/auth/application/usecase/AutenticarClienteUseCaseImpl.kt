@@ -9,14 +9,16 @@ internal class AutenticarClienteUseCaseImpl(
     private val clientes: ClienteRepository,
     private val emissor: EmissorDeToken,
 ) : AutenticarClienteUseCase {
-
     override fun executar(cpfInformado: String?): ResultadoAutenticacao {
-        val cpf = cpfInformado?.let(CPF::parse)
-            ?: return ResultadoAutenticacao.CpfInvalido
+        val cpf =
+            cpfInformado?.let(CPF::parse)
+                ?: return ResultadoAutenticacao.CpfInvalido
 
-        val cliente = clientes.buscarPorCpf(cpf)
-            ?.takeIf(Cliente::podeAutenticar)
-            ?: return ResultadoAutenticacao.NaoAutorizado
+        val cliente =
+            clientes
+                .buscarPorCpf(cpf)
+                ?.takeIf(Cliente::podeAutenticar)
+                ?: return ResultadoAutenticacao.NaoAutorizado
 
         return ResultadoAutenticacao.Autenticado(emissor.emitir(cliente))
     }

@@ -21,9 +21,9 @@ internal fun cliente(
     status: StatusCliente = StatusCliente.ATIVO,
 ) = Cliente(ClienteId(id), nome, status)
 
-internal class ClienteRepositoryFake(private val porCpf: Map<String, Cliente> = emptyMap()) :
-    ClienteRepository {
-
+internal class ClienteRepositoryFake(
+    private val porCpf: Map<String, Cliente> = emptyMap(),
+) : ClienteRepository {
     val consultas = mutableListOf<CPF>()
 
     override fun buscarPorCpf(cpf: CPF): Cliente? {
@@ -32,8 +32,10 @@ internal class ClienteRepositoryFake(private val porCpf: Map<String, Cliente> = 
     }
 
     companion object {
-        fun com(cpf: String, cliente: Cliente) =
-            ClienteRepositoryFake(mapOf(cpf.filter(Char::isDigit) to cliente))
+        fun com(
+            cpf: String,
+            cliente: Cliente,
+        ) = ClienteRepositoryFake(mapOf(cpf.filter(Char::isDigit) to cliente))
 
         fun vazio() = ClienteRepositoryFake()
     }
@@ -42,7 +44,6 @@ internal class ClienteRepositoryFake(private val porCpf: Map<String, Cliente> = 
 internal class EmissorDeTokenFake(
     private val token: TokenEmitido = TokenEmitido("jwt-fake", 3600),
 ) : EmissorDeToken {
-
     val emissoes = mutableListOf<Cliente>()
 
     override fun emitir(cliente: Cliente): TokenEmitido {
@@ -54,7 +55,6 @@ internal class EmissorDeTokenFake(
 internal class AutenticarClienteUseCaseFake(
     private val resposta: (String?) -> ResultadoAutenticacao,
 ) : AutenticarClienteUseCase {
-
     val cpfsRecebidos = mutableListOf<String?>()
 
     override fun executar(cpfInformado: String?): ResultadoAutenticacao {

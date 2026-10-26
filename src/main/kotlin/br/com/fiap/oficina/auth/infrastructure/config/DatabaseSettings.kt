@@ -8,10 +8,11 @@ data class DatabaseSettings(
     override fun toString() = "DatabaseSettings(url=$url, user=$user)"
 
     companion object {
-        fun fromEnv(env: (String) -> String? = System::getenv) = DatabaseSettings(
-            url = env.obrigatoria("DB_URL"),
-            user = env.obrigatoria("DB_USER"),
-            password = env.obrigatoria("DB_PASSWORD"),
-        )
+        fun fromEnv(env: (String) -> String? = System::getenv) =
+            DatabaseSettings(
+                url = env.obrigatoria("DB_URL"),
+                user = env.obrigatoria("DB_USER"),
+                password = env.obrigatoria("DB_PASSWORD"),
+            )
     }
 }

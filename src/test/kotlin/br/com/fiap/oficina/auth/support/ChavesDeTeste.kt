@@ -13,7 +13,6 @@ import java.util.Base64
  * tamanho é criado uma única vez por execução.
  */
 internal object ChavesDeTeste {
-
     val par2048: KeyPair by lazy { gerar(2048) }
     val par1024: KeyPair by lazy { gerar(1024) }
     val par2048Alternativo: KeyPair by lazy { gerar(2048) }
@@ -29,8 +28,10 @@ internal object ChavesDeTeste {
     /** Chave RSA sem os parâmetros CRT (apenas módulo e expoente privado). */
     val pemSemParametrosCrt: String by lazy {
         val privada = par2048.private as RSAPrivateCrtKey
-        val semCrt = KeyFactory.getInstance("RSA")
-            .generatePrivate(RSAPrivateKeySpec(privada.modulus, privada.privateExponent))
+        val semCrt =
+            KeyFactory
+                .getInstance("RSA")
+                .generatePrivate(RSAPrivateKeySpec(privada.modulus, privada.privateExponent))
         envelopar(semCrt.encoded)
     }
 
@@ -39,9 +40,10 @@ internal object ChavesDeTeste {
 
     private fun paraPem(par: KeyPair): String = envelopar(par.private.encoded)
 
-    private fun envelopar(der: ByteArray): String = buildString {
-        appendLine("-----BEGIN PRIVATE KEY-----")
-        appendLine(Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(der))
-        append("-----END PRIVATE KEY-----")
-    }
+    private fun envelopar(der: ByteArray): String =
+        buildString {
+            appendLine("-----BEGIN PRIVATE KEY-----")
+            appendLine(Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(der))
+            append("-----END PRIVATE KEY-----")
+        }
 }

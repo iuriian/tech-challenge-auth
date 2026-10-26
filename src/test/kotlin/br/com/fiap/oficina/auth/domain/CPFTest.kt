@@ -9,10 +9,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 class CPFTest {
-
     @Nested
     inner class Parse {
-
         @ParameterizedTest
         @ValueSource(
             strings = [
@@ -25,7 +23,7 @@ class CPFTest {
                 "39053344705",
                 "00000000191",
                 "714.287.938-60",
-            ]
+            ],
         )
         fun `aceita CPF com digitos verificadores corretos, com ou sem mascara`(entrada: String) {
             assertNotNull(CPF.parse(entrada), "esperava CPF valido para '$entrada'")
@@ -53,7 +51,7 @@ class CPFTest {
                 "",
                 "abc",
                 "529.982.247-2X",
-            ]
+            ],
         )
         fun `rejeita CPF com digito verificador, tamanho ou conteudo invalido`(entrada: String) {
             assertNull(CPF.parse(entrada), "esperava null para '$entrada'")
@@ -73,7 +71,6 @@ class CPFTest {
 
     @Nested
     inner class Representacoes {
-
         private val cpf = requireNotNull(CPF.parse("52998224725"))
 
         @Test
@@ -96,7 +93,6 @@ class CPFTest {
 
     @Nested
     inner class Igualdade {
-
         @Test
         fun `CPFs com os mesmos digitos sao iguais independente da formatacao`() {
             val a = CPF.parse("529.982.247-25")

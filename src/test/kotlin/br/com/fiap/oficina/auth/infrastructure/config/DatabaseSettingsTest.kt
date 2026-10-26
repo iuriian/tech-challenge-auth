@@ -8,12 +8,12 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class DatabaseSettingsTest {
-
-    private val completo = mapOf(
-        "DB_URL" to "jdbc:postgresql://10.0.0.5:5432/oficina",
-        "DB_USER" to "auth_ro",
-        "DB_PASSWORD" to "s3nh4-super-secreta",
-    )
+    private val completo =
+        mapOf(
+            "DB_URL" to "jdbc:postgresql://10.0.0.5:5432/oficina",
+            "DB_USER" to "auth_ro",
+            "DB_PASSWORD" to "s3nh4-super-secreta",
+        )
 
     private fun env(valores: Map<String, String?>): (String) -> String? = valores::get
 
@@ -29,9 +29,10 @@ class DatabaseSettingsTest {
     @ParameterizedTest
     @ValueSource(strings = ["DB_URL", "DB_USER", "DB_PASSWORD"])
     fun `toda variavel e obrigatoria`(nome: String) {
-        val erro = assertFailsWith<IllegalStateException> {
-            DatabaseSettings.fromEnv(env(completo - nome))
-        }
+        val erro =
+            assertFailsWith<IllegalStateException> {
+                DatabaseSettings.fromEnv(env(completo - nome))
+            }
 
         assertEquals("Variável de ambiente $nome ausente", erro.message)
     }

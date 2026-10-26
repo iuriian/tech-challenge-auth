@@ -20,8 +20,8 @@ import java.util.UUID
 class NimbusTokenAdapter(
     private val settings: TokenSettings,
     private val clock: Clock,
-) : EmissorDeToken, ChavesPublicas {
-
+) : EmissorDeToken,
+    ChavesPublicas {
     private val rsaKey: RSAKey = RsaKeyLoader.carregar(settings.privateKeyPem)
     private val signer = RSASSASigner(rsaKey)
     private val jwksJson: String = JWKSet(rsaKey.toPublicJWK()).toString()
@@ -31,22 +31,26 @@ class NimbusTokenAdapter(
     override fun emitir(cliente: Cliente): TokenEmitido {
         val agora = clock.instant()
 
-        val claims = JWTClaimsSet.Builder()
-            .issuer(settings.issuer)
-            .subject(cliente.id.toString())
-            .audience(settings.audience)
-            .issueTime(Date.from(agora))
-            .notBeforeTime(Date.from(agora))
-            .expirationTime(Date.from(agora.plus(settings.ttl)))
-            .jwtID(UUID.randomUUID().toString())
-            .claim("name", cliente.nome)
-            .claim("roles", listOf(ROLE_CLIENTE))
-            .build()
+        val claims =
+            JWTClaimsSet
+                .Builder()
+                .issuer(settings.issuer)
+                .subject(cliente.id.toString())
+                .audience(settings.audience)
+                .issueTime(Date.from(agora))
+                .notBeforeTime(Date.from(agora))
+                .expirationTime(Date.from(agora.plus(settings.ttl)))
+                .jwtID(UUID.randomUUID().toString())
+                .claim("name", cliente.nome)
+                .claim("roles", listOf(ROLE_CLIENTE))
+                .build()
 
-        val header = JWSHeader.Builder(JWSAlgorithm.RS256)
-            .keyID(rsaKey.keyID)
-            .type(JOSEObjectType.JWT)
-            .build()
+        val header =
+            JWSHeader
+                .Builder(JWSAlgorithm.RS256)
+                .keyID(rsaKey.keyID)
+                .type(JOSEObjectType.JWT)
+                .build()
 
         val jwt = SignedJWT(header, claims).apply { sign(signer) }.serialize()
         return TokenEmitido(jwt, settings.ttl.seconds)

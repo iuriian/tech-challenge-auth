@@ -17,21 +17,25 @@ internal object RsaKeyLoader {
             "Chave deve estar em PKCS#8 (BEGIN PRIVATE KEY). Gere com: openssl genpkey -algorithm RSA"
         }
 
-        val der = Base64.getMimeDecoder().decode(
-            normalizado.lineSequence().filterNot { it.startsWith("-----") }.joinToString("")
-        )
+        val der =
+            Base64.getMimeDecoder().decode(
+                normalizado.lineSequence().filterNot { it.startsWith("-----") }.joinToString(""),
+            )
 
         val kf = KeyFactory.getInstance("RSA")
-        val privada = kf.generatePrivate(PKCS8EncodedKeySpec(der)) as? RSAPrivateCrtKey
-            ?: error("Chave privada RSA sem parâmetros CRT")
-        val publica = kf.generatePublic(
-            RSAPublicKeySpec(privada.modulus, privada.publicExponent)
-        ) as RSAPublicKey
+        val privada =
+            kf.generatePrivate(PKCS8EncodedKeySpec(der)) as? RSAPrivateCrtKey
+                ?: error("Chave privada RSA sem parâmetros CRT")
+        val publica =
+            kf.generatePublic(
+                RSAPublicKeySpec(privada.modulus, privada.publicExponent),
+            ) as RSAPublicKey
 
         require(publica.modulus.bitLength() >= 2048) { "Chave RSA deve ter ao menos 2048 bits" }
 
         val base = RSAKey.Builder(publica).privateKey(privada).build()
-        return RSAKey.Builder(base)
+        return RSAKey
+            .Builder(base)
             .keyID(base.computeThumbprint().toString())
             .keyUse(KeyUse.SIGNATURE)
             .algorithm(JWSAlgorithm.RS256)

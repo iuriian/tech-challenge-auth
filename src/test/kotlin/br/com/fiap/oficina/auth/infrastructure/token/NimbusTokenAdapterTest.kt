@@ -21,16 +21,16 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class NimbusTokenAdapterTest {
-
     private val agora = Instant.parse("2026-03-10T12:00:00Z")
     private val clock = Clock.fixed(agora, ZoneOffset.UTC)
 
-    private val settings = TokenSettings(
-        issuer = "https://auth.oficina.dev",
-        audience = "oficina",
-        ttl = Duration.ofMinutes(15),
-        privateKeyPem = ChavesDeTeste.pem2048,
-    )
+    private val settings =
+        TokenSettings(
+            issuer = "https://auth.oficina.dev",
+            audience = "oficina",
+            ttl = Duration.ofMinutes(15),
+            privateKeyPem = ChavesDeTeste.pem2048,
+        )
 
     private val adapter = NimbusTokenAdapter(settings, clock)
 
@@ -40,7 +40,13 @@ class NimbusTokenAdapterTest {
     @Test
     fun `token emitido tem assinatura RS256 verificavel pela chave publica do JWKS`() {
         val jwt = SignedJWT.parse(adapter.emitir(joana).accessToken)
-        val publica = JWKSet.parse(adapter.jwks()).keys.single().toRSAKey().toRSAPublicKey()
+        val publica =
+            JWKSet
+                .parse(adapter.jwks())
+                .keys
+                .single()
+                .toRSAKey()
+                .toRSAPublicKey()
 
         assertTrue(jwt.verify(RSASSAVerifier(publica)), "assinatura invalida")
     }
@@ -52,7 +58,11 @@ class NimbusTokenAdapterTest {
         assertEquals(JWSAlgorithm.RS256, jwt.header.algorithm)
         assertEquals(JOSEObjectType.JWT, jwt.header.type)
         assertEquals(
-            JWKSet.parse(adapter.jwks()).keys.single().keyID,
+            JWKSet
+                .parse(adapter.jwks())
+                .keys
+                .single()
+                .keyID,
             jwt.header.keyID,
             "kid do token precisa casar com o kid publicado no JWKS",
         )

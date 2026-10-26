@@ -1,10 +1,12 @@
 package br.com.fiap.oficina.auth.domain
 
 @ConsistentCopyVisibility
-data class CPF private constructor(val digitos: String) {
-
+data class CPF private constructor(
+    val digitos: String,
+) {
     val formatado: String
-        get() = "${digitos.substring(0, 3)}.${digitos.substring(3, 6)}." +
+        get() =
+            "${digitos.substring(0, 3)}.${digitos.substring(3, 6)}." +
                 "${digitos.substring(6, 9)}-${digitos.substring(9)}"
 
     val mascarado: String
@@ -23,7 +25,8 @@ data class CPF private constructor(val digitos: String) {
                 return if (resto == 10) 0 else resto
             }
 
-            val valido = digitoVerificador(9) == d[9] - '0' &&
+            val valido =
+                digitoVerificador(9) == d[9] - '0' &&
                     digitoVerificador(10) == d[10] - '0'
             return if (valido) CPF(d) else null
         }

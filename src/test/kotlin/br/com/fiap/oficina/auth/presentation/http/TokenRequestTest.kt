@@ -8,9 +8,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class TokenRequestTest {
-
-    private val mapper = jacksonObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+    private val mapper =
+        jacksonObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
     @Test
     fun `desserializa o cpf do corpo`() {

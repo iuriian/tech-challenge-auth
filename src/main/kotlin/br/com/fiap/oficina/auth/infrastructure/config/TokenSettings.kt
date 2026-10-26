@@ -16,12 +16,13 @@ data class TokenSettings(
     override fun toString() = "TokenSettings(issuer=$issuer, audience=$audience, ttl=$ttl)"
 
     companion object {
-        fun fromEnv(env: (String) -> String? = System::getenv) = TokenSettings(
-            issuer = env.obrigatoria("ISSUER").trimEnd('/'),
-            audience = env("AUDIENCE") ?: "oficina",
-            ttl = Duration.ofSeconds(env("TOKEN_TTL_SECONDS")?.toLong() ?: 3600),
-            privateKeyPem = env.obrigatoria("JWT_PRIVATE_KEY"),
-        )
+        fun fromEnv(env: (String) -> String? = System::getenv) =
+            TokenSettings(
+                issuer = env.obrigatoria("ISSUER").trimEnd('/'),
+                audience = env("AUDIENCE") ?: "oficina",
+                ttl = Duration.ofSeconds(env("TOKEN_TTL_SECONDS")?.toLong() ?: 3600),
+                privateKeyPem = env.obrigatoria("JWT_PRIVATE_KEY"),
+            )
     }
 }
 

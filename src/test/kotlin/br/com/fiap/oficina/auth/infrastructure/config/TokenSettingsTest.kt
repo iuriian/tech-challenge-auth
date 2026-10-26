@@ -9,13 +9,13 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class TokenSettingsTest {
-
-    private val completo = mapOf(
-        "ISSUER" to "https://auth.oficina.dev",
-        "AUDIENCE" to "oficina-app",
-        "TOKEN_TTL_SECONDS" to "600",
-        "JWT_PRIVATE_KEY" to "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
-    )
+    private val completo =
+        mapOf(
+            "ISSUER" to "https://auth.oficina.dev",
+            "AUDIENCE" to "oficina-app",
+            "TOKEN_TTL_SECONDS" to "600",
+            "JWT_PRIVATE_KEY" to "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+        )
 
     private fun env(valores: Map<String, String?>): (String) -> String? = valores::get
 
@@ -53,9 +53,10 @@ class TokenSettingsTest {
     @ParameterizedTest
     @ValueSource(strings = ["ISSUER", "JWT_PRIVATE_KEY"])
     fun `variavel obrigatoria ausente falha com mensagem explicita`(nome: String) {
-        val erro = assertFailsWith<IllegalStateException> {
-            TokenSettings.fromEnv(env(completo - nome))
-        }
+        val erro =
+            assertFailsWith<IllegalStateException> {
+                TokenSettings.fromEnv(env(completo - nome))
+            }
 
         assertEquals("Variável de ambiente $nome ausente", erro.message)
     }
@@ -71,9 +72,10 @@ class TokenSettingsTest {
     @ParameterizedTest
     @ValueSource(strings = ["auth.oficina.dev", "ftp://auth.oficina.dev", "oficina"])
     fun `issuer precisa ser uma URL`(issuer: String) {
-        val erro = assertFailsWith<IllegalArgumentException> {
-            TokenSettings.fromEnv(env(completo + ("ISSUER" to issuer)))
-        }
+        val erro =
+            assertFailsWith<IllegalArgumentException> {
+                TokenSettings.fromEnv(env(completo + ("ISSUER" to issuer)))
+            }
 
         assertEquals("ISSUER deve ser uma URL", erro.message)
     }
@@ -81,9 +83,10 @@ class TokenSettingsTest {
     @ParameterizedTest
     @ValueSource(strings = ["0", "-1", "-3600"])
     fun `ttl precisa ser positivo`(ttl: String) {
-        val erro = assertFailsWith<IllegalArgumentException> {
-            TokenSettings.fromEnv(env(completo + ("TOKEN_TTL_SECONDS" to ttl)))
-        }
+        val erro =
+            assertFailsWith<IllegalArgumentException> {
+                TokenSettings.fromEnv(env(completo + ("TOKEN_TTL_SECONDS" to ttl)))
+            }
 
         assertEquals("TOKEN_TTL_SECONDS deve ser positivo", erro.message)
     }

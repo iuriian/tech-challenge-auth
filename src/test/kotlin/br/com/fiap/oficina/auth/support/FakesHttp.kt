@@ -13,7 +13,6 @@ internal class FakeHttpRequest(
     private val caminho: String,
     private val corpo: String = "",
 ) : HttpRequest by naoImplementado() {
-
     override fun getMethod(): String = metodo
 
     override fun getPath(): String = caminho
@@ -24,7 +23,6 @@ internal class FakeHttpRequest(
 }
 
 internal class FakeHttpResponse : HttpResponse by naoImplementado() {
-
     private val buffer = StringWriter()
     private val escritor = BufferedWriter(buffer)
     private val cabecalhos = mutableMapOf<String, MutableList<String>>()
@@ -51,7 +49,10 @@ internal class FakeHttpResponse : HttpResponse by naoImplementado() {
         tipoDeConteudo = contentType
     }
 
-    override fun appendHeader(header: String, value: String) {
+    override fun appendHeader(
+        header: String,
+        value: String,
+    ) {
         cabecalhos.getOrPut(header) { mutableListOf() }.add(value)
     }
 

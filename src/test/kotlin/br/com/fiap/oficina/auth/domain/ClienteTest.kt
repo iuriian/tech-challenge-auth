@@ -6,12 +6,11 @@ import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.test.assertFailsWith
 
 class ClienteTest {
-
     private val id = ClienteId(UUID.randomUUID())
 
     @Test
@@ -39,7 +38,6 @@ class ClienteTest {
 }
 
 class ClienteIdTest {
-
     @Test
     fun `toString devolve o UUID cru para uso como subject do token`() {
         val uuid = UUID.fromString("3f2504e0-4f89-11d3-9a0c-0305e82c3301")

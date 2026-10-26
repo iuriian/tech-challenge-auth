@@ -22,32 +22,37 @@ import org.koin.dsl.onClose
 import java.time.Clock
 import javax.sql.DataSource
 
-val configModule = module {
-    single { TokenSettings.fromEnv() }
-    single { DatabaseSettings.fromEnv() }
-    single<Clock> { Clock.systemUTC() }
-    single<ObjectMapper> {
-        jacksonObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+val configModule =
+    module {
+        single { TokenSettings.fromEnv() }
+        single { DatabaseSettings.fromEnv() }
+        single<Clock> { Clock.systemUTC() }
+        single<ObjectMapper> {
+            jacksonObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        }
     }
-}
 
-val infrastructureModule = module {
-    single<DataSource> { DataSourceFactory.criar(get()) } onClose { (it as? AutoCloseable)?.close() }
+val infrastructureModule =
+    module {
+        single<DataSource> { DataSourceFactory.criar(get()) } onClose { (it as? AutoCloseable)?.close() }
 
-    singleOf(::JdbcClienteRepository) { bind<ClienteRepository>() }
+        singleOf(::JdbcClienteRepository) { bind<ClienteRepository>() }
 
-    single { NimbusTokenAdapter(get(), get()) } binds arrayOf(
-        EmissorDeToken::class,
-        ChavesPublicas::class,
-    )
-}
+        single { NimbusTokenAdapter(get(), get()) } binds
+            arrayOf(
+                EmissorDeToken::class,
+                ChavesPublicas::class,
+            )
+    }
 
-val applicationModule = module {
-    singleOf(::AutenticarClienteUseCaseImpl) { bind<AutenticarClienteUseCase>() }
-}
+val applicationModule =
+    module {
+        singleOf(::AutenticarClienteUseCaseImpl) { bind<AutenticarClienteUseCase>() }
+    }
 
-val entrypointModule = module {
-    singleOf(::AuthHttpHandler)
-}
+val entrypointModule =
+    module {
+        singleOf(::AuthHttpHandler)
+    }
 
 val authModules = listOf(configModule, infrastructureModule, applicationModule, entrypointModule)

@@ -13,7 +13,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class RsaKeyLoaderTest {
-
     @Test
     fun `carrega chave PKCS8 valida com metadados JWK preenchidos`() {
         val chave = RsaKeyLoader.carregar(ChavesDeTeste.pem2048)
@@ -72,7 +71,7 @@ class RsaKeyLoaderTest {
             "nao-e-um-pem",
             "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----",
             "-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----",
-        ]
+        ],
     )
     fun `rejeita formatos diferentes de PKCS8`(pem: String) {
         val erro = assertFailsWith<IllegalArgumentException> { RsaKeyLoader.carregar(pem) }
@@ -82,18 +81,20 @@ class RsaKeyLoaderTest {
 
     @Test
     fun `rejeita chave menor que 2048 bits`() {
-        val erro = assertFailsWith<IllegalArgumentException> {
-            RsaKeyLoader.carregar(ChavesDeTeste.pem1024)
-        }
+        val erro =
+            assertFailsWith<IllegalArgumentException> {
+                RsaKeyLoader.carregar(ChavesDeTeste.pem1024)
+            }
 
         assertEquals("Chave RSA deve ter ao menos 2048 bits", erro.message)
     }
 
     @Test
     fun `rejeita chave RSA sem parametros CRT - nao serve para assinar com Nimbus`() {
-        val erro = assertFailsWith<IllegalStateException> {
-            RsaKeyLoader.carregar(ChavesDeTeste.pemSemParametrosCrt)
-        }
+        val erro =
+            assertFailsWith<IllegalStateException> {
+                RsaKeyLoader.carregar(ChavesDeTeste.pemSemParametrosCrt)
+            }
 
         assertEquals("Chave privada RSA sem parâmetros CRT", erro.message)
     }

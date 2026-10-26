@@ -11,7 +11,6 @@ import kotlin.test.assertTrue
  * Renomear ou mover o pacote compila sem erro e só quebra em produção — por isso o nome é testado.
  */
 class AuthFunctionTest {
-
     private val fqn = "br.com.fiap.oficina.auth.presentation.AuthFunction"
 
     @Test
@@ -31,10 +30,11 @@ class AuthFunctionTest {
         val workflow = File(".github/workflows/deploy.yml")
         check(workflow.exists()) { "workflow de deploy nao encontrado em ${workflow.absolutePath}" }
 
-        val declarado = Regex("""--entry-point=([\w.]+)""")
-            .find(workflow.readText())
-            ?.groupValues
-            ?.get(1)
+        val declarado =
+            Regex("""--entry-point=([\w.]+)""")
+                .find(workflow.readText())
+                ?.groupValues
+                ?.get(1)
 
         assertEquals(fqn, declarado, "--entry-point do deploy.yml divergiu da classe")
     }
@@ -43,10 +43,11 @@ class AuthFunctionTest {
     fun `o target do invoker local aponta para a classe existente`() {
         val build = File("build.gradle.kts")
 
-        val declarado = Regex(""""--target",\s*"([\w.]+)"""")
-            .find(build.readText())
-            ?.groupValues
-            ?.get(1)
+        val declarado =
+            Regex(""""--target",\s*"([\w.]+)"""")
+                .find(build.readText())
+                ?.groupValues
+                ?.get(1)
 
         assertEquals(fqn, declarado, "--target da task runFunction divergiu da classe")
     }

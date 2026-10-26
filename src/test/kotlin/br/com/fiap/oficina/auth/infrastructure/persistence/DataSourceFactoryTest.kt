@@ -6,12 +6,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class DataSourceFactoryTest {
-
-    private val settings = DatabaseSettings(
-        url = "jdbc:postgresql://10.0.0.5:5432/oficina",
-        user = "auth_ro",
-        password = "segredo",
-    )
+    private val settings =
+        DatabaseSettings(
+            url = "jdbc:postgresql://10.0.0.5:5432/oficina",
+            user = "auth_ro",
+            password = "segredo",
+        )
 
     @Test
     fun `pool e criado sem exigir banco disponivel na inicializacao`() {
