@@ -1,66 +1,25 @@
-name: deploy-auth
+name: CD Homologação
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "build.gradle.kts"
-      - "settings.gradle.kts"
-      - "gradle.properties"
-      - "gradle/**"
-      - "gradlew"
-      - ".editorconfig"
-      - "config/detekt/**"
-      - "Dockerfile"
-      - ".dockerignore"
-      - ".github/workflows/deploy.yml"
+    branches: ["release/**"]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-auth
+  group: cd-homologacao-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  ci:
+    uses: ./.github/workflows/ci.yml
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      # Roda antes dos testes: formatação e análise estática são as checagens
-      # mais baratas, então falham rápido e poupam a compilação dos testes.
-      - name: Qualidade (Spotless/ktlint e detekt)
-        run: ./gradlew qualidade --no-daemon
-
-      - name: Relatórios do detekt
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: detekt-reports
-          path: build/reports/detekt/
-          if-no-files-found: ignore
-
-      - name: Testes e fat JAR
-        run: ./gradlew test shadowJar --no-daemon
-
-      # Exatamente o que o Dockerfile copia: o fat JAR com o servidor embutido.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: imagem-context
-          path: build/libs/*-all.jar
-          if-no-files-found: error
-
-  deploy:
-    needs: build
+  imagem:
+    name: Imagem (build e push)
+    needs: ci
     runs-on: ubuntu-latest
     environment: staging
+    outputs:
+      ref: ${{ steps.publicar.outputs.ref }}
     env:
       PROJECT: ${{ vars.GCP_PROJECT_ID }}
       REGION: ${{ vars.REGION }}
@@ -83,7 +42,7 @@ jobs:
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Build e push da imagem
-        id: imagem
+        id: publicar
         run: |
           REPO="${REGION}-docker.pkg.dev/${PROJECT}/oficina-auth/${SERVICE}"
           docker build -t "${REPO}:${GITHUB_SHA}" -t "${REPO}:latest" .
@@ -91,15 +50,31 @@ jobs:
           docker push "${REPO}:latest"
           echo "ref=${REPO}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      # --concurrency=8 casa com o Hikari (maximumPoolSize=2) e limita o banco
-      # a 10 conexões no pico de 5 instâncias. O Cloud Functions gen2 servia uma
-      # requisição por instância; aqui a JVM é reaproveitada entre elas.
+  deploy:
+    name: Deploy em homologação
+    needs: imagem
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      issuer: ${{ steps.entregar.outputs.issuer }}
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.REGION }}
+      SERVICE: oficina-auth
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
       - name: Deploy no Cloud Run
+        id: entregar
         run: |
           gcloud run deploy "$SERVICE" \
             --project="$PROJECT" \
             --region="$REGION" \
-            --image="${{ steps.imagem.outputs.ref }}" \
+            --image="${{ needs.imagem.outputs.ref }}" \
             --no-allow-unauthenticated \
             --service-account="auth-fn@${PROJECT}.iam.gserviceaccount.com" \
             --vpc-connector=auth-connector \
@@ -113,11 +88,21 @@ jobs:
             --max-instances=5 \
             --set-env-vars="ISSUER=${{ vars.AUTH_ISSUER }},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${{ vars.DB_URL }},DB_USER=auth_ro" \
             --set-secrets="JWT_PRIVATE_KEY=jwt-signing-key:latest,DB_PASSWORD=db-auth-password:latest"
+          echo "issuer=${{ vars.AUTH_ISSUER }}" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke test
+  smoke-test:
+    name: Smoke test
+    needs: deploy
+    runs-on: ubuntu-latest
+    env:
+      ISSUER: ${{ needs.deploy.outputs.issuer }}
+    steps:
+      - name: JWKS publica ao menos uma chave
+        run: curl -fsS "$ISSUER/.well-known/jwks.json" | jq -e '.keys | length > 0'
+
+      - name: CPF inválido devolve 400
         run: |
-          curl -fsS "${{ vars.AUTH_ISSUER }}/.well-known/jwks.json" | jq -e '.keys | length > 0'
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
             -H 'Content-Type: application/json' -d '{"cpf":"000"}' \
-            "${{ vars.AUTH_ISSUER }}/auth/token")
+            "$ISSUER/auth/token")
           test "$STATUS" = "400"
