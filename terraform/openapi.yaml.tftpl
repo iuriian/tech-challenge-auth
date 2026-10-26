@@ -1,0 +1,54 @@
+swagger: "2.0"
+info:
+  title: oficina-auth
+  description: Autenticação de clientes da oficina por CPF
+  version: "1.0.0"
+schemes:
+  - https
+produces:
+  - application/json
+x-google-backend:
+  address: ${function_url}
+  path_translation: APPEND_PATH_TO_ADDRESS
+  deadline: 15.0
+paths:
+  /auth/token:
+    post:
+      operationId: emitirToken
+      summary: Emite um access token para o cliente identificado pelo CPF
+      consumes:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            required: [cpf]
+            properties:
+              cpf:
+                type: string
+                example: "529.982.247-25"
+      responses:
+        "200":
+          description: Token emitido
+        "400":
+          description: CPF ausente ou inválido
+        "401":
+          description: Cliente inexistente ou inativo
+        "503":
+          description: Serviço indisponível
+  /.well-known/jwks.json:
+    get:
+      operationId: jwks
+      summary: Chaves públicas para validação dos tokens
+      responses:
+        "200":
+          description: JWK Set
+  /.well-known/openid-configuration:
+    get:
+      operationId: discovery
+      summary: Metadados do emissor
+      responses:
+        "200":
+          description: Documento de discovery

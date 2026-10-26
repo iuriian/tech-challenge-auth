@@ -1,0 +1,5 @@
+project_id            = "meu-projeto-gcp"
+region                = "us-central1"
+network               = "oficina-vpc"
+connector_cidr        = "10.8.0.0/28"
+ci_service_account_id = "github-ci"
