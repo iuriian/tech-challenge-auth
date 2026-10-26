@@ -7,6 +7,31 @@ Os diagramas são mermaid, renderizados pelo próprio GitHub. A fonte fica neste
 arquivo para que uma mudança de arquitetura apareça como diff revisável, não como
 binário trocado.
 
+## Imagens exportadas
+
+Para usar fora do GitHub — slides, PDF da entrega, documentos — cada diagrama
+também está como SVG:
+
+| Diagrama | Arquivo |
+| --- | --- |
+| Camadas (hexagonal) | [arquitetura-camadas.svg](arquitetura-camadas.svg) |
+| Runtime no GCP | [arquitetura-runtime-gcp.svg](arquitetura-runtime-gcp.svg) |
+| Fluxo de uma emissão | [arquitetura-fluxo-emissao.svg](arquitetura-fluxo-emissao.svg) |
+| Fluxo de entrega | [arquitetura-fluxo-entrega.svg](arquitetura-fluxo-entrega.svg) |
+
+Os SVGs usam só `<text>` nativo, sem `<foreignObject>` e sem fonte embutida em
+base64, então abrem em PowerPoint, Illustrator e Inkscape — não apenas no
+navegador. É para isso que serve o `mermaid.config.json` deste diretório:
+`htmlLabels: false` troca os rótulos em HTML por texto SVG, e `wrappingWidth`
+evita que nomes longos como `JdbcClienteRepository` quebrem no meio da palavra.
+
+**São arquivos gerados.** Ao mudar um diagrama acima, regenere o SVG
+correspondente — salve o bloco mermaid num arquivo `.mmd` e rode:
+
+```bash
+npx -y @mermaid-js/mermaid-cli   -i arquitetura-camadas.mmd   -o docs/arquitetura-camadas.svg   -b white -c docs/mermaid.config.json
+```
+
 ## Camadas (hexagonal)
 
 Quatro camadas, com as dependências sempre apontando para o domínio. As regras não
@@ -45,10 +70,10 @@ flowchart TB
     UC --> PE
     UC --> CPF
     UC --> CLI
-    JR -.implementa.-> PR
-    NT -.implementa.-> PE
-    NT -.implementa.-> PC
-    DI -.monta o grafo.-> AR
+    JR -.->|"implementa"| PR
+    NT -.->|"implementa"| PE
+    NT -.->|"implementa"| PC
+    DI -.->|"monta o grafo"| AR
 
     classDef dom fill:#1f6f43,stroke:#0d3b24,color:#fff
     classDef app fill:#1f4e79,stroke:#102a43,color:#fff
