@@ -1,0 +1,24 @@
+# O contexto precisa apenas do que o Gradle já produziu em build/.
+.git
+.github
+.gradle
+.idea
+.kotlin
+build/classes
+build/kotlin
+build/reports
+build/resources
+build/spotless-clean
+build/spotless-lints
+build/test-results
+build/tmp
+config
+gradle
+gradlew
+gradlew.bat
+sql
+src
+terraform
+*.gradle.kts
+*.md
+gradle.properties

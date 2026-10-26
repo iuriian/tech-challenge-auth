@@ -18,7 +18,7 @@ val ktlintVersion = "1.6.0"
 val invoker: Configuration by configurations.creating
 
 dependencies {
-    // Fornecido pelo runtime do Cloud Functions — não vai no JAR
+    // Fornecido em runtime pelo invoker empacotado na imagem — não vai no fat JAR
     compileOnly("com.google.cloud.functions:functions-framework-api:1.1.4")
 
     implementation(platform("io.insert-koin:koin-bom:4.1.1"))
@@ -28,7 +28,7 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.8")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.20.0")
 
-    // Servidor local para ./gradlew runFunction
+    // Servidor HTTP da imagem do Cloud Run e do ./gradlew runFunction
     invoker("com.google.cloud.functions.invoker:java-function-invoker:1.4.1")
 
     testImplementation("com.google.cloud.functions:functions-framework-api:1.1.4")
@@ -44,9 +44,17 @@ kotlin { jvmToolchain(21) }
 
 tasks.test { useJUnitPlatform() }
 
+// O invoker vai junto na imagem do Cloud Run (ver Dockerfile), por isso é
+// copiado para build/invoker/ sempre que o fat JAR é gerado.
+tasks.register<Copy>("copiarInvoker") {
+    from(invoker)
+    into(layout.buildDirectory.dir("invoker"))
+}
+
 tasks.shadowJar {
     archiveClassifier.set("all")
     mergeServiceFiles() // preserva META-INF/services do driver JDBC
+    finalizedBy("copiarInvoker")
 }
 
 tasks.register<JavaExec>("runFunction") {
@@ -82,6 +90,7 @@ spotless {
     format("demais") {
         target(
             "*.md",
+            "Dockerfile",
             ".github/**/*.yml",
             "sql/**/*.sql",
             "terraform/**/*.tf",
