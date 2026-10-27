@@ -11,28 +11,13 @@ import javax.sql.DataSource
 class JdbcClienteRepository(
     private val ds: DataSource,
 ) : ClienteRepository {
-    /**
-     * O aninhamento são os três `use` de connection, statement e result set: é o contrato de
-     * fechamento de recursos do JDBC, não complexidade acidental.
-     */
-    @Suppress("NestedBlockDepth")
     override fun buscarPorCpf(cpf: CPF): Cliente? =
-        ds.connection.use { conn ->
-            conn.prepareStatement(SQL).use { ps ->
-                ps.setString(1, cpf.digitos)
-                ps.setString(2, cpf.formatado)
-                ps.executeQuery().use { rs ->
-                    if (!rs.next()) {
-                        null
-                    } else {
-                        Cliente(
-                            id = UsuarioId(UUID.fromString(rs.getString("id"))),
-                            nome = rs.getString("nome"),
-                            status = StatusCliente.de(rs.getString("status")),
-                        )
-                    }
-                }
-            }
+        ds.primeiraLinha(SQL, listOf(cpf.digitos, cpf.formatado)) { rs ->
+            Cliente(
+                id = UsuarioId(UUID.fromString(rs.getString("id"))),
+                nome = rs.getString("nome"),
+                status = StatusCliente.de(rs.getString("status")),
+            )
         }
 
     private companion object {
