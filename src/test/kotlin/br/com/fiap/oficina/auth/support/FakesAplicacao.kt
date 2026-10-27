@@ -2,7 +2,7 @@ package br.com.fiap.oficina.auth.support
 
 import br.com.fiap.oficina.auth.application.port.EmissorDeToken
 import br.com.fiap.oficina.auth.application.port.TokenEmitido
-import br.com.fiap.oficina.auth.application.usecase.AutenticarClienteUseCase
+import br.com.fiap.oficina.auth.application.usecase.AutenticarUsuarioUseCase
 import br.com.fiap.oficina.auth.application.usecase.ResultadoAutenticacao
 import br.com.fiap.oficina.auth.domain.CPF
 import br.com.fiap.oficina.auth.domain.Cliente
@@ -89,9 +89,9 @@ internal class EmissorDeTokenFake(
     }
 }
 
-internal class AutenticarClienteUseCaseFake(
+internal class AutenticarUsuarioUseCaseFake(
     private val resposta: (String?) -> ResultadoAutenticacao,
-) : AutenticarClienteUseCase {
+) : AutenticarUsuarioUseCase {
     val cpfsRecebidos = mutableListOf<String?>()
 
     override fun executar(cpfInformado: String?): ResultadoAutenticacao {

@@ -1,7 +1,7 @@
 package br.com.fiap.oficina.auth.presentation.http
 
 import br.com.fiap.oficina.auth.application.port.ChavesPublicas
-import br.com.fiap.oficina.auth.application.usecase.AutenticarClienteUseCase
+import br.com.fiap.oficina.auth.application.usecase.AutenticarUsuarioUseCase
 import br.com.fiap.oficina.auth.application.usecase.ResultadoAutenticacao
 import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -34,7 +34,7 @@ import java.util.logging.Logger
  * falha em resposta JSON. Nada que aconteça aqui pode escapar como stack trace para o cliente.
  */
 class AuthRoutes(
-    private val autenticar: AutenticarClienteUseCase,
+    private val autenticar: AutenticarUsuarioUseCase,
     private val chaves: ChavesPublicas,
     private val settings: TokenSettings,
     private val mapper: ObjectMapper,
@@ -114,7 +114,7 @@ class AuthRoutes(
 
             ResultadoAutenticacao.NaoAutorizado -> {
                 log.info("Autenticação negada")
-                erro(HttpStatusCode.Unauthorized, "invalid_grant", "Cliente não autorizado")
+                erro(HttpStatusCode.Unauthorized, "invalid_grant", "Usuário não autorizado")
             }
         }
     }

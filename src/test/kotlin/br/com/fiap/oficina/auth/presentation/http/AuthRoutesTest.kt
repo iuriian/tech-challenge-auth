@@ -4,7 +4,7 @@ import br.com.fiap.oficina.auth.application.port.ChavesPublicas
 import br.com.fiap.oficina.auth.application.port.TokenEmitido
 import br.com.fiap.oficina.auth.application.usecase.ResultadoAutenticacao
 import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
-import br.com.fiap.oficina.auth.support.AutenticarClienteUseCaseFake
+import br.com.fiap.oficina.auth.support.AutenticarUsuarioUseCaseFake
 import br.com.fiap.oficina.auth.support.CPF_VALIDO
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
@@ -50,7 +50,7 @@ class AuthRoutesTest {
         ResultadoAutenticacao.Autenticado(TokenEmitido("token-assinado", 3600))
     }
 
-    private val useCase get() = AutenticarClienteUseCaseFake(resposta)
+    private val useCase get() = AutenticarUsuarioUseCaseFake(resposta)
 
     private val jsonUtf8 =
         ContentType.Application.Json
@@ -74,7 +74,7 @@ class AuthRoutesTest {
         metodo: String,
         caminho: String,
         corpo: String = "",
-        casoDeUso: AutenticarClienteUseCaseFake = useCase,
+        casoDeUso: AutenticarUsuarioUseCaseFake = useCase,
         chavesPublicas: ChavesPublicas = chaves,
     ): Resposta {
         lateinit var capturada: Resposta
@@ -108,7 +108,7 @@ class AuthRoutesTest {
     @Nested
     inner class EmissaoDeToken {
         @Test
-        fun `CPF de cliente ativo devolve 200 com token no formato OAuth2`() {
+        fun `CPF de usuario apto devolve 200 com token no formato OAuth2`() {
             val res = chamar("POST", "/auth/token", """{"cpf":"$CPF_VALIDO"}""")
 
             assertEquals(200, res.status)
@@ -165,14 +165,14 @@ class AuthRoutesTest {
         }
 
         @Test
-        fun `cliente nao autorizado devolve 401 invalid_grant`() {
+        fun `usuario nao autorizado devolve 401 invalid_grant`() {
             resposta = { ResultadoAutenticacao.NaoAutorizado }
 
             val res = chamar("POST", "/auth/token", """{"cpf":"$CPF_VALIDO"}""")
 
             assertEquals(401, res.status)
             assertEquals("invalid_grant", res.json().get("error").asText())
-            assertEquals("Cliente não autorizado", res.json().get("error_description").asText())
+            assertEquals("Usuário não autorizado", res.json().get("error_description").asText())
         }
 
         @Test
