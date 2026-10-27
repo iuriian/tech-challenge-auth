@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  formatacao:
+    name: Formatação (Spotless/ktlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: ./gradlew spotlessCheck --no-daemon
+
+  analise-estatica:
+    name: Análise estática (detekt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: ./gradlew detekt --no-daemon
+
+      - name: Relatórios do detekt
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: detekt-reports
+          path: build/reports/detekt/
+          if-no-files-found: ignore
+
+  testes:
+    name: Testes
+    needs: [formatacao, analise-estatica]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: ./gradlew test jacocoTestCoverageVerification --no-daemon
+
+      - name: Relatórios dos testes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+          if-no-files-found: ignore
+
+      # Sempre, não só na falha: o relatório é a evidência da cobertura, e numa
+      # execução verde é justamente quando se quer consultá-lo.
+      - name: Relatório de cobertura (Jacoco)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/
+          if-no-files-found: ignore
+
+  empacotamento:
+    name: Empacotamento (fat JAR)
+    needs: testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: ./gradlew shadowJar --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imagem-context
+          path: build/libs/*-all.jar
+          if-no-files-found: error

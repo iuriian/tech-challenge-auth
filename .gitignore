@@ -3,6 +3,7 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+*.pem
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
@@ -43,3 +44,12 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Terraform ###
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log

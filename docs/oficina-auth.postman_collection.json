@@ -1,0 +1,137 @@
+{
+  "info": {
+    "name": "oficina-auth",
+    "description": "Autenticação dos usuários da oficina por CPF. Defina a variável issuer: http://localhost:8081 para execução local, ou o output issuer do Terraform para homologação e produção. Os CPFs das variáveis correspondem aos dados da aplicação (migrations V2, V13 e V17 do Tech-Challenge), expostos pelas views cliente e funcionario: cpf_cliente está na view cliente; cpf_atendente e cpf_mecanico na view funcionario; cpf_sem_cadastro é um CPF válido que não está em nenhuma das duas. O papel do token é consequência de onde o cadastro está — o endpoint é o mesmo para todos.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "issuer",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "cpf_cliente",
+      "value": "527.044.726-61"
+    },
+    {
+      "key": "cpf_atendente",
+      "value": "529.982.247-25"
+    },
+    {
+      "key": "cpf_mecanico",
+      "value": "286.255.878-87"
+    },
+    {
+      "key": "cpf_sem_cadastro",
+      "value": "123.456.789-09"
+    }
+  ],
+  "item": [
+    {
+      "name": "Token — cliente (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_cliente}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "Carlos Pereira, da view cliente. Devolve access_token, token_type e expires_in. O claim roles sai como [\"CLIENTE\"]."
+      }
+    },
+    {
+      "name": "Token — atendente (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_atendente}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "João Silva, da view funcionario com cargo ATENDENTE. O claim roles sai como [\"ATENDENTE\"]."
+      }
+    },
+    {
+      "name": "Token — mecânico (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_mecanico}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "Maria Souza, da view funcionario com cargo MECANICO. O claim roles sai como [\"MECANICO\"]."
+      }
+    },
+    {
+      "name": "Token — CPF inválido (400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"000\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "Reprovado nos dígitos verificadores: error invalid_request."
+      }
+    },
+    {
+      "name": "Token — CPF sem cadastro (401)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_sem_cadastro}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "CPF válido, sem cadastro em cliente nem em funcionario: error invalid_grant. A mesma resposta sai para cliente inativo e para cargo que o serviço não reconhece, de propósito, para não revelar quem existe nem em qual cadastro."
+      }
+    },
+    {
+      "name": "JWKS",
+      "request": {
+        "method": "GET",
+        "url": "{{issuer}}/.well-known/jwks.json",
+        "description": "Chaves públicas para validação offline dos tokens."
+      }
+    },
+    {
+      "name": "Discovery",
+      "request": {
+        "method": "GET",
+        "url": "{{issuer}}/.well-known/openid-configuration",
+        "description": "Metadados do emissor: issuer, jwks_uri e token_endpoint."
+      }
+    }
+  ]
+}

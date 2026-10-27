@@ -1,0 +1,4 @@
+project_id            = "meu-projeto-gcp"
+region                = "us-central1"
+network               = "default"
+ci_service_account_id = "github-ci"

@@ -1,0 +1,29 @@
+# Overrides sobre o config padrão do detekt (buildUponDefaultConfig = true).
+# Apenas o que diverge do default aparece aqui — o resto vem do detekt.
+#
+# NÃO substitua este arquivo pelo config completo gerado ou copiado de outro
+# lugar. Dois modos de quebrar já aconteceram:
+#
+#  1. O bloco `config:` do arquivo gerado traz `excludes: []`, que o plugin
+#     rejeita junto com buildUponDefaultConfig:
+#     "Value "[]" set for config parameter "config > excludes" is not of
+#      required type String".
+#
+#  2. Config de outra versão major não vale aqui. O detekt 2.x renomeou
+#     `threshold` para `allowedLines`/`allowedConditions`/`allowedComplexity`;
+#     colar um config 2.x neste projeto, que roda 1.23.8, resulta em
+#     "Run failed with 75 invalid config properties".
+#
+# Se precisar ver os defaults da versão em uso, gere em um diretório temporário
+# com detektGenerateConfig e consulte — sem copiar para cá.
+
+build:
+  maxIssues: 0
+
+style:
+  # Formatação é responsabilidade exclusiva do Spotless/ktlint. Manter as duas
+  # regras aqui também significaria dois donos para a mesma decisão.
+  NewLineAtEndOfFile:
+    active: false
+  MaxLineLength:
+    active: false

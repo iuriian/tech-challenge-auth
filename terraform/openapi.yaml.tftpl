@@ -1,0 +1,60 @@
+swagger: "2.0"
+info:
+  title: oficina-auth
+  description: >-
+    Autenticação dos usuários da oficina por CPF. Emite um JWT RS256 cujo claim
+    roles traz um único papel: CLIENTE, ATENDENTE, MECANICO ou ADMIN.
+  version: "1.0.0"
+schemes:
+  - https
+produces:
+  - application/json
+x-google-backend:
+  address: ${service_url}
+  path_translation: APPEND_PATH_TO_ADDRESS
+  deadline: 15.0
+paths:
+  /auth/token:
+    post:
+      operationId: emitirToken
+      summary: Emite um access token para o usuário identificado pelo CPF
+      description: >-
+        O CPF é procurado primeiro na tabela cliente e, se não houver cadastro apto
+        lá, na tabela funcionario. O papel do token vem da origem: CLIENTE para a
+        primeira, o cargo cadastrado para a segunda.
+      consumes:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            required: [cpf]
+            properties:
+              cpf:
+                type: string
+                example: "529.982.247-25"
+      responses:
+        "200":
+          description: Token emitido
+        "400":
+          description: CPF ausente ou inválido
+        "401":
+          description: Sem cadastro apto em cliente nem em funcionario
+        "503":
+          description: Serviço indisponível
+  /.well-known/jwks.json:
+    get:
+      operationId: jwks
+      summary: Chaves públicas para validação dos tokens
+      responses:
+        "200":
+          description: JWK Set
+  /.well-known/openid-configuration:
+    get:
+      operationId: discovery
+      summary: Metadados do emissor
+      responses:
+        "200":
+          description: Documento de discovery
