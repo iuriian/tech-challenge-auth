@@ -1,7 +1,9 @@
 swagger: "2.0"
 info:
   title: oficina-auth
-  description: Autenticação de clientes da oficina por CPF
+  description: >-
+    Autenticação dos usuários da oficina por CPF. Emite um JWT RS256 cujo claim
+    roles traz um único papel: CLIENTE, ATENDENTE, MECANICO ou ADMIN.
   version: "1.0.0"
 schemes:
   - https
@@ -15,7 +17,11 @@ paths:
   /auth/token:
     post:
       operationId: emitirToken
-      summary: Emite um access token para o cliente identificado pelo CPF
+      summary: Emite um access token para o usuário identificado pelo CPF
+      description: >-
+        O CPF é procurado primeiro na tabela cliente e, se não houver cadastro apto
+        lá, na tabela funcionario. O papel do token vem da origem: CLIENTE para a
+        primeira, o cargo cadastrado para a segunda.
       consumes:
         - application/json
       parameters:
@@ -35,7 +41,7 @@ paths:
         "400":
           description: CPF ausente ou inválido
         "401":
-          description: Cliente inexistente ou inativo
+          description: Sem cadastro apto em cliente nem em funcionario
         "503":
           description: Serviço indisponível
   /.well-known/jwks.json:
