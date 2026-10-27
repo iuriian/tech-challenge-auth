@@ -3,7 +3,7 @@ package br.com.fiap.oficina.auth.infrastructure.token
 import br.com.fiap.oficina.auth.application.port.ChavesPublicas
 import br.com.fiap.oficina.auth.application.port.EmissorDeToken
 import br.com.fiap.oficina.auth.application.port.TokenEmitido
-import br.com.fiap.oficina.auth.domain.Cliente
+import br.com.fiap.oficina.auth.domain.Usuario
 import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
 import com.nimbusds.jose.JOSEObjectType
 import com.nimbusds.jose.JWSAlgorithm
@@ -28,21 +28,21 @@ class NimbusTokenAdapter(
 
     override fun jwks(): String = jwksJson
 
-    override fun emitir(cliente: Cliente): TokenEmitido {
+    override fun emitir(usuario: Usuario): TokenEmitido {
         val agora = clock.instant()
 
         val claims =
             JWTClaimsSet
                 .Builder()
                 .issuer(settings.issuer)
-                .subject(cliente.id.toString())
+                .subject(usuario.id.toString())
                 .audience(settings.audience)
                 .issueTime(Date.from(agora))
                 .notBeforeTime(Date.from(agora))
                 .expirationTime(Date.from(agora.plus(settings.ttl)))
                 .jwtID(UUID.randomUUID().toString())
-                .claim("name", cliente.nome)
-                .claim("roles", listOf(ROLE_CLIENTE))
+                .claim("name", usuario.nome)
+                .claim("roles", listOf(usuario.papel.name))
                 .build()
 
         val header =
@@ -54,9 +54,5 @@ class NimbusTokenAdapter(
 
         val jwt = SignedJWT(header, claims).apply { sign(signer) }.serialize()
         return TokenEmitido(jwt, settings.ttl.seconds)
-    }
-
-    private companion object {
-        const val ROLE_CLIENTE = "CLIENTE"
     }
 }

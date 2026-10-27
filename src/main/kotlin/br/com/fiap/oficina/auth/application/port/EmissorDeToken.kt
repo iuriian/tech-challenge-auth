@@ -1,7 +1,7 @@
 package br.com.fiap.oficina.auth.application.port
 
-import br.com.fiap.oficina.auth.domain.Cliente
+import br.com.fiap.oficina.auth.domain.Usuario
 
 interface EmissorDeToken {
-    fun emitir(cliente: Cliente): TokenEmitido
+    fun emitir(usuario: Usuario): TokenEmitido
 }

@@ -29,7 +29,7 @@ class AutenticarClienteUseCaseImplTest {
 
         val autenticado = assertIs<ResultadoAutenticacao.Autenticado>(resultado)
         assertEquals(TokenEmitido("token-assinado", 900), autenticado.token)
-        assertEquals(listOf(ativo), emissor.emissoes)
+        assertEquals(ativo, emissor.emissoes.single())
     }
 
     @ParameterizedTest

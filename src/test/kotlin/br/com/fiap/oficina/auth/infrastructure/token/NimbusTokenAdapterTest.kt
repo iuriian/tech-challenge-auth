@@ -1,15 +1,19 @@
 package br.com.fiap.oficina.auth.infrastructure.token
 
+import br.com.fiap.oficina.auth.domain.Papel
 import br.com.fiap.oficina.auth.domain.StatusCliente
 import br.com.fiap.oficina.auth.infrastructure.config.TokenSettings
 import br.com.fiap.oficina.auth.support.ChavesDeTeste
 import br.com.fiap.oficina.auth.support.cliente
+import br.com.fiap.oficina.auth.support.funcionario
 import com.nimbusds.jose.JOSEObjectType
 import com.nimbusds.jose.JWSAlgorithm
 import com.nimbusds.jose.crypto.RSASSAVerifier
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jwt.SignedJWT
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -69,7 +73,7 @@ class NimbusTokenAdapterTest {
     }
 
     @Test
-    fun `claims identificam o cliente e o emissor`() {
+    fun `claims identificam o usuario e o emissor`() {
         val claims = SignedJWT.parse(adapter.emitir(joana).accessToken).jwtClaimsSet
 
         assertEquals("https://auth.oficina.dev", claims.issuer)
@@ -77,6 +81,26 @@ class NimbusTokenAdapterTest {
         assertEquals(listOf("oficina"), claims.audience)
         assertEquals("Joana Souza", claims.getStringClaim("name"))
         assertEquals(listOf("CLIENTE"), claims.getStringListClaim("roles"))
+    }
+
+    @ParameterizedTest
+    @EnumSource(Papel::class, names = ["CLIENTE"], mode = EnumSource.Mode.EXCLUDE)
+    fun `roles do funcionario traz exatamente o cargo cadastrado`(papel: Papel) {
+        val token = adapter.emitir(funcionario(id = id, nome = "Carlos Pereira", papel = papel))
+        val claims = SignedJWT.parse(token.accessToken).jwtClaimsSet
+
+        assertEquals(listOf(papel.name), claims.getStringListClaim("roles"))
+        assertEquals(id.toString(), claims.subject)
+        assertEquals("Carlos Pereira", claims.getStringClaim("name"))
+    }
+
+    @Test
+    fun `o claim roles nunca traz mais de um papel`() {
+        val emitidos =
+            listOf(joana, funcionario(papel = Papel.ATENDENTE), funcionario(papel = Papel.ADMIN))
+                .map { SignedJWT.parse(adapter.emitir(it).accessToken).jwtClaimsSet }
+
+        assertTrue(emitidos.all { it.getStringListClaim("roles").size == 1 })
     }
 
     @Test
@@ -128,7 +152,7 @@ class NimbusTokenAdapterTest {
     }
 
     @Test
-    fun `tokens de clientes diferentes tem subjects diferentes`() {
+    fun `tokens de usuarios diferentes tem subjects diferentes`() {
         val outro = cliente(id = UUID.randomUUID(), nome = "Carlos")
 
         val a = SignedJWT.parse(adapter.emitir(joana).accessToken).jwtClaimsSet.subject

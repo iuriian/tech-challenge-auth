@@ -81,10 +81,10 @@ internal class FuncionarioRepositoryFake(
 internal class EmissorDeTokenFake(
     private val token: TokenEmitido = TokenEmitido("jwt-fake", 3600),
 ) : EmissorDeToken {
-    val emissoes = mutableListOf<Cliente>()
+    val emissoes = mutableListOf<Usuario>()
 
-    override fun emitir(cliente: Cliente): TokenEmitido {
-        emissoes += cliente
+    override fun emitir(usuario: Usuario): TokenEmitido {
+        emissoes += usuario
         return token
     }
 }
