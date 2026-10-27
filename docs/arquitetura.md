@@ -99,7 +99,7 @@ implementam contratos declarados nas camadas de dentro. Trocar Postgres por outr
 banco, ou Nimbus por outra biblioteca de JOSE, não toca domínio nem aplicação.
 
 `Usuario` é a interface selada que fecha o conjunto de identidades: `Cliente` e
-`Funcionario`. É o que permite ao caso de uso tratar as duas tabelas pelo mesmo
+`Funcionario`. É o que permite ao caso de uso tratar os dois cadastros pelo mesmo
 caminho e ao emissor montar o token sabendo apenas `id`, `nome` e `papel` — a
 origem do cadastro não vaza para fora do domínio.
 
@@ -111,22 +111,33 @@ flowchart LR
     GW["API Gateway<br/>oficina-auth-gw"]
     CR["Cloud Run<br/>oficina-auth<br/>SA auth-fn"]
     SM["Secret Manager<br/>jwt-signing-key<br/>db-auth-password"]
-    VPC["VPC connector<br/>auth-connector"]
-    DB[("Cloud SQL<br/>papel auth_ro")]
+    VPC["Direct VPC egress<br/>VPC default, subnet default"]
+    DB[("Cloud SQL<br/>tech-challenge-staging-pg<br/>views cliente e funcionario<br/>papel auth_ro")]
     AR["Artifact Registry<br/>oficina-auth"]
 
     CONS -->|"POST /auth/token"| GW
     GW -->|"IAM: SA auth-gateway<br/>roles/run.invoker"| CR
     CR -->|"monta como env var"| SM
     CR -->|"egress private-ranges-only"| VPC
-    VPC -->|"SELECT, só leitura"| DB
+    VPC -->|"IP privado via peering<br/>TLS, SELECT só leitura"| DB
     AR -.->|"imagem da revisão"| CR
     CONS -.->|"GET /.well-known/jwks.json<br/>valida o token offline"| GW
 ```
 
 O Cloud Run roda com `--no-allow-unauthenticated`: o único chamador autorizado é a
-service account do gateway. O acesso ao banco é só leitura em três níveis — o papel
-`auth_ro` tem `SELECT` em quatro colunas de `cliente` e quatro de `funcionario`, mais
+service account do gateway.
+
+A saída para o banco usa **Direct VPC egress**: as instâncias do Cloud Run entram
+direto na subnet `default`, sem as VMs de um conector de Serverless VPC Access e,
+portanto, sem custo fixo de rede. O egress é `private-ranges-only`: só o tráfego
+para faixas privadas (o Cloud SQL) passa pela VPC, e o resto segue pela saída
+padrão do Cloud Run, sem exigir Cloud NAT.
+
+O banco pertence a outros dois repositórios: a instância e o peering ao
+`tech-challenge-database`, e o schema ao Flyway da aplicação (`Tech-Challenge`).
+Este serviço lê apenas as views `cliente` e `funcionario`, que a aplicação publica
+como contrato de leitura (migration V16). O acesso é só leitura em três níveis: o
+papel `auth_ro` tem `SELECT` em quatro colunas de cada view, mais
 `default_transaction_read_only`, e o pool do Hikari sobe com `isReadOnly`.
 
 O Terraform cria o serviço do Cloud Run uma única vez, só para que o endereço exista
@@ -145,12 +156,12 @@ sequenceDiagram
     C->>G: POST /auth/token {cpf}
     G->>S: repassa autenticado por IAM
     S->>S: CPF.parse — dígitos verificadores
-    S->>DB: SELECT id, nome, status FROM cliente
+    S->>DB: SELECT id, nome, status FROM cliente (view)
     DB-->>S: cadastro de cliente
     alt cliente com status ATIVO
         S->>S: papel CLIENTE
     else sem cliente apto
-        S->>DB: SELECT id, nome, cargo FROM funcionario
+        S->>DB: SELECT id, nome, cargo FROM funcionario (view)
         DB-->>S: cadastro de funcionário
         S->>S: cargo traduzido em ATENDENTE, MECANICO ou ADMIN
     end
@@ -158,16 +169,20 @@ sequenceDiagram
     S-->>C: 200 {access_token, token_type, expires_in}
 ```
 
-A tabela `cliente` é consultada primeiro por duas razões que apontam para o mesmo
-lado: é o caso comum, resolvido numa única consulta, e um CPF cadastrado nas duas
-tabelas acaba recebendo o papel de menor privilégio. A segunda consulta só acontece
+A view `cliente` é consultada primeiro por duas razões que apontam para o mesmo
+lado: é o caso comum, resolvido numa única consulta, e um CPF cadastrado nos dois
+lugares acaba recebendo o papel de menor privilégio. A segunda consulta só acontece
 quando a primeira não produz ninguém apto — inclusive quando o cliente existe mas
 está inativo, para que um cadastro inativo não esconda o cadastro de funcionário do
 mesmo CPF.
 
 Cadastro inexistente, cliente inativo e cargo que o domínio não reconhece produzem
 todos a mesma resposta `401` (`invalid_grant`), de propósito: a diferença revelaria
-quais CPFs têm cadastro e em qual tabela.
+quais CPFs têm cadastro e em qual lugar.
+
+Com a instância Cloud SQL desligada (o padrão fora de uso, por custo), a consulta
+falha e o serviço responde `503` (`temporarily_unavailable`). O JWKS e o discovery
+continuam respondendo, porque não dependem do banco.
 
 ## Fluxo de entrega
 

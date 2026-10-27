@@ -9,21 +9,26 @@ cada requisição.
 
 Autentica os quatro papéis do sistema, cada um com a sua origem de cadastro:
 
-| Papel no claim `roles` | Tabela | Critério |
+| Papel no claim `roles` | View | Critério |
 | --- | --- | --- |
 | `CLIENTE` | `cliente` | `status = ATIVO` |
 | `ATENDENTE` | `funcionario` | `cargo = ATENDENTE` |
 | `MECANICO` | `funcionario` | `cargo = MECANICO` |
 | `ADMIN` | `funcionario` | `cargo = ADMIN` |
 
+`cliente` e `funcionario` são **views** publicadas pela aplicação
+(`Tech-Challenge`, migration V16) sobre as tabelas `clientes` e `funcionarios`. Elas
+são o contrato de leitura deste serviço: a aplicação pode mudar as tabelas à vontade,
+desde que preserve as colunas das views, e este serviço nunca enxerga as tabelas.
+
 O endpoint é um só: quem chama manda apenas o CPF e não escolhe o papel — ele é
-consequência de onde o cadastro está. A tabela `cliente` é consultada primeiro,
-então um CPF presente nas duas recebe o papel de menor privilégio; a tabela
+consequência de onde o cadastro está. A view `cliente` é consultada primeiro,
+então um CPF presente nas duas recebe o papel de menor privilégio; a view
 `funcionario` só é lida quando a primeira não produz ninguém apto. Ver
 [Fluxo de uma emissão](docs/arquitetura.md#fluxo-de-uma-emissão).
 
 É o único componente do sistema que emite identidade. Os outros serviços não
-conhecem CPF, não falam com as tabelas de cadastro e não guardam segredo de
+conhecem CPF, não falam com os cadastros e não guardam segredo de
 assinatura: confiam no `iss`/`aud` do token e na chave pública do JWKS.
 
 Não há senha. O CPF é o único fator, por decisão de escopo do desafio — o serviço
@@ -50,7 +55,7 @@ prova identidade contra o cadastro, não posse de um segredo. Ver
 | Formatação | Spotless + ktlint | 7.0.4 / 1.6.0 | Dono único do estilo; regras vêm do `.editorconfig` |
 | Imagem | `gcr.io/distroless/java21-debian12:nonroot` | — | Sem shell nem gerenciador de pacotes |
 | Infraestrutura | Terraform | >= 1.6 | Estado em GCS |
-| Nuvem | Cloud Run, API Gateway, Artifact Registry, Secret Manager, VPC connector | — | — |
+| Nuvem | Cloud Run (Direct VPC egress), API Gateway, Artifact Registry, Secret Manager | — | Sem conector de VPC: nenhum custo fixo de rede |
 | CI/CD | GitHub Actions | — | Um workflow por responsabilidade |
 
 ## Arquitetura
@@ -69,7 +74,7 @@ biblioteca de JOSE, não toca domínio nem aplicação.
 Os demais diagramas estão em **[docs/arquitetura.md](docs/arquitetura.md)**:
 
 - [Runtime no GCP](docs/arquitetura.md#runtime-no-gcp) — gateway, Cloud Run, Secret
-  Manager, VPC connector e Cloud SQL
+  Manager, Direct VPC egress e Cloud SQL
 - [Fluxo de uma emissão](docs/arquitetura.md#fluxo-de-uma-emissão) — o caminho de um
   `POST /auth/token`
 - [Fluxo de entrega](docs/arquitetura.md#fluxo-de-entrega) — o gitflow e a promoção
@@ -104,14 +109,14 @@ Isso não afeta a renderização dos endpoints.
 
 | Método | Caminho | Resposta |
 | --- | --- | --- |
-| `POST` | `/auth/token` | `200` com o token, `400` CPF inválido, `401` sem cadastro apto, `503` falha interna |
+| `POST` | `/auth/token` | `200` com o token, `400` CPF inválido, `401` sem cadastro apto, `503` falha interna ou banco desligado |
 | `GET` | `/.well-known/jwks.json` | `200` com o JWK Set (`public, max-age=300`) |
 | `GET` | `/.well-known/openid-configuration` | `200` com os metadados do emissor (`public, max-age=3600`) |
 
 ```bash
 curl -X POST "$ISSUER/auth/token" \
   -H 'Content-Type: application/json' \
-  -d '{"cpf":"529.982.247-25"}'
+  -d '{"cpf":"527.044.726-61"}'
 ```
 
 ```json
@@ -129,7 +134,7 @@ O CPF é aceito com ou sem máscara. Os erros seguem o formato do OAuth 2.0
 { "error": "invalid_request", "error_description": "CPF inválido" }
 ```
 
-Claims do token: `iss`, `sub` (o `id` da linha de cadastro), `aud`, `iat`, `nbf`,
+Claims do token: `iss`, `sub` (o `id` do cadastro), `aud`, `iat`, `nbf`,
 `exp`, `jti`, mais `name` e `roles`. O header leva `kid` — o thumbprint da chave —
 para que o consumidor escolha a chave certa no JWKS.
 
@@ -143,10 +148,20 @@ espera, não porque um token acumule papéis.
 **[docs/oficina-auth.postman_collection.json](docs/oficina-auth.postman_collection.json)**
 
 Importe no Postman e ajuste a variável `issuer` — `http://localhost:8081` para a
-execução local, ou o output `issuer` do Terraform para homologação e produção. A
-coleção cobre um `200` por papel (cliente, atendente, mecânico e admin), o `400` e o
-`401`, mais o JWKS e o discovery. Os CPFs ficam em variáveis que correspondem ao seed
-desta página.
+execução local, ou o output `issuer` do Terraform para homologação e produção.
+
+Os CPFs das variáveis são os dos dados da aplicação, então a mesma coleção serve
+para os dois ambientes:
+
+| Variável | CPF | Cadastro | Resposta |
+| --- | --- | --- | --- |
+| `cpf_cliente` | 527.044.726-61 | Carlos Pereira (cliente) | `200`, `["CLIENTE"]` |
+| `cpf_atendente` | 529.982.247-25 | João Silva (funcionário) | `200`, `["ATENDENTE"]` |
+| `cpf_mecanico` | 286.255.878-87 | Maria Souza (funcionário) | `200`, `["MECANICO"]` |
+| `cpf_sem_cadastro` | 123.456.789-09 | nenhum | `401` |
+
+Não há requisição de `ADMIN` porque nenhum cadastro pode ter esse cargo hoje — ver
+[Limitações conhecidas](#limitações-conhecidas).
 
 ## Execução local
 
@@ -154,13 +169,31 @@ Requer JDK 21 (o Gradle resolve o toolchain sozinho), Docker e OpenSSL.
 
 ### 1. Banco
 
+Escolha uma das duas opções.
+
+**Opção A — banco da aplicação (recomendada).** Usa os mesmos dados e as mesmas
+views do staging. No repositório `Tech-Challenge`:
+
 ```bash
-docker run -d --name oficina-db -p 5432:5432 \
+docker compose up -d db
+./gradlew bootRun          # uma vez: o Flyway cria as tabelas, as views e os seeds
+```
+
+Depois de a aplicação subir pela primeira vez, ela pode ser parada; o banco
+continua em `localhost:5432` com usuário `user` e senha `password`.
+
+**Opção B — banco isolado.** Útil para rodar o auth sem o repositório da aplicação.
+Sobe na porta **5433** com outro nome de container, para não conflitar com o
+`oficina-db` da aplicação:
+
+```bash
+docker run -d --name oficina-auth-db -p 5433:5432 \
   -e POSTGRES_PASSWORD=local -e POSTGRES_DB=oficina postgres:16
 ```
 
 ```bash
-docker exec -i oficina-db psql -U postgres -d oficina <<'SQL'
+docker exec -i oficina-auth-db psql -U postgres -d oficina <<'SQL'
+-- Mesmo formato das views publicadas pela aplicação (V16).
 CREATE TABLE cliente (
   id     uuid PRIMARY KEY,
   nome   text NOT NULL,
@@ -173,18 +206,21 @@ CREATE TABLE funcionario (
   cpf   text NOT NULL,
   cargo text NOT NULL
 );
+-- Mesmos CPFs dos dados da aplicação, para que a coleção do Postman
+-- funcione igual nos dois bancos.
 INSERT INTO cliente VALUES
-  (gen_random_uuid(), 'Cliente Ativo',   '52998224725', 'ATIVO'),
-  (gen_random_uuid(), 'Cliente Inativo', '11144477735', 'INATIVO');
+  (gen_random_uuid(), 'Carlos Pereira', '52704472661', 'ATIVO'),
+  (gen_random_uuid(), 'Maria Oliveira', '11144477735', 'ATIVO'),
+  (gen_random_uuid(), 'João da Silva',  '39053344705', 'ATIVO');
 INSERT INTO funcionario VALUES
-  (gen_random_uuid(), 'Atendente Ana',  '39053344705', 'ATENDENTE'),
-  (gen_random_uuid(), 'Mecânico Bruno', '28625587887', 'MECANICO'),
-  (gen_random_uuid(), 'Admin Carla',    '45317828791', 'ADMIN');
+  (gen_random_uuid(), 'João Silva',  '52998224725', 'ATENDENTE'),
+  (gen_random_uuid(), 'Maria Souza', '28625587887', 'MECANICO'),
+  (gen_random_uuid(), 'Carlos Lima', '45317828791', 'ATENDENTE');
 SQL
 ```
 
 O `SELECT` casa o CPF com e sem máscara (`WHERE cpf IN (?, ?)`), então qualquer um
-dos dois formatos serve na coluna. As duas tabelas são lidas com quatro colunas
+dos dois formatos serve na coluna. Os dois cadastros são lidos com quatro colunas
 nomeadas, nunca `SELECT *` — é exatamente o que o `GRANT` por coluna do `auth_ro`
 concede, e o teste de cada repositório trava isso.
 
@@ -201,32 +237,40 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt-private.pe
 ```bash
 export ISSUER=http://localhost:8081
 export JWT_PRIVATE_KEY="$(cat jwt-private.pem)"
+
+# Opção A (banco da aplicação)
 export DB_URL=jdbc:postgresql://localhost:5432/oficina
-export DB_USER=postgres
-export DB_PASSWORD=local
+export DB_USER=user
+export DB_PASSWORD=password
+
+# Opção B (banco isolado)
+# export DB_URL=jdbc:postgresql://localhost:5433/oficina
+# export DB_USER=postgres
+# export DB_PASSWORD=local
 
 ./gradlew run
 ```
 
-`./gradlew run` escuta na **8081** de propósito, deixando a 8080 livre para o resto
-do stack na máquina. Para validar:
+`./gradlew run` escuta na **8081** de propósito: é o `AUTH_ISSUER_URI` padrão da
+aplicação, então a aplicação local valida os tokens deste serviço sem configuração
+extra. Para validar:
 
 ```bash
 curl -s localhost:8081/.well-known/jwks.json | jq '.keys[0].kid'
 curl -s -X POST localhost:8081/auth/token \
-  -H 'Content-Type: application/json' -d '{"cpf":"529.982.247-25"}' | jq
+  -H 'Content-Type: application/json' -d '{"cpf":"527.044.726-61"}' | jq
 ```
 
-Para ver qual papel saiu no token, trocando o CPF pelos do seed acima:
+Para ver qual papel saiu no token, trocando o CPF pelos da tabela do Postman:
 
 ```bash
 curl -s -X POST localhost:8081/auth/token \
-  -H 'Content-Type: application/json' -d '{"cpf":"390.533.447-05"}' |
+  -H 'Content-Type: application/json' -d '{"cpf":"529.982.247-25"}' |
   jq -r .access_token | cut -d. -f2 | base64 -d | jq '{sub, name, roles}'
 ```
 
 ```json
-{ "sub": "a3c1...", "name": "Atendente Ana", "roles": ["ATENDENTE"] }
+{ "sub": "3f5f33b0-...", "name": "João Silva", "roles": ["ATENDENTE"] }
 ```
 
 ### Rodar como container
@@ -234,11 +278,11 @@ curl -s -X POST localhost:8081/auth/token \
 ```bash
 ./gradlew shadowJar
 docker build -t oficina-auth:local .
-docker run --rm -p 8080:8080 \
-  -e ISSUER=http://localhost:8080 \
+docker run --rm -p 8081:8080 \
+  -e ISSUER=http://localhost:8081 \
   -e JWT_PRIVATE_KEY="$(cat jwt-private.pem)" \
   -e DB_URL=jdbc:postgresql://host.docker.internal:5432/oficina \
-  -e DB_USER=postgres -e DB_PASSWORD=local \
+  -e DB_USER=user -e DB_PASSWORD=password \
   oficina-auth:local
 ```
 
@@ -248,9 +292,9 @@ docker run --rm -p 8080:8080 \
 | --- | --- | --- | --- |
 | `ISSUER` | sim | — | URL do emissor; precisa começar com `http`. A barra final é descartada |
 | `JWT_PRIVATE_KEY` | sim | — | PEM PKCS#8. Aceita `\n` escapado, para caber em variável de ambiente |
-| `DB_URL` | sim | — | JDBC do Postgres |
-| `DB_USER` | sim | — | `auth_ro` em produção |
-| `DB_PASSWORD` | sim | — | vem do Secret Manager |
+| `DB_URL` | sim | — | JDBC do Postgres. No Cloud SQL, com `?sslmode=require` |
+| `DB_USER` | sim | — | `auth_ro` em homologação e produção |
+| `DB_PASSWORD` | sim | — | vem do Secret Manager (`db-auth-password`) |
 | `AUDIENCE` | não | `oficina` | claim `aud` |
 | `TOKEN_TTL_SECONDS` | não | `3600` | precisa ser positivo |
 | `PORT` | não | `8080` | injetada pelo Cloud Run; valor inválido cai no padrão em vez de derrubar a instância |
@@ -261,32 +305,45 @@ chave e senha nunca apareçam em log.
 
 ## Deploy
 
-### 1. Infraestrutura (uma vez por ambiente)
+### 1. Dependências entre repositórios
 
-A VPC e o secret da senha do banco **não** nascem aqui — vêm do
-`tech-challenge-infra-database` e são lidos como `data`. **Aplique aquele primeiro.**
+Este serviço depende de recursos criados em outros três lugares. Aplique na ordem:
+
+| Ordem | Repositório | Entrega para este serviço |
+| --- | --- | --- |
+| 1 | `Tech-Challenge` (`terraform/`) | VPC `default` e SA `github-actions-cd`, lidas como `data` |
+| 2 | `tech-challenge-database` | Cloud SQL com IP privado, peering e o secret `db-auth-password`, lido como `data` |
+| 3 | **este repositório** | Cloud Run, API Gateway e o output `issuer` |
+| 4 | `Tech-Challenge` (app) | as views `cliente` e `funcionario` (migration V16) |
+
+O passo 4 vem depois deste porque a aplicação precisa do `issuer` para validar os
+tokens, e este serviço precisa das views para emitir. Por isso o deploy da imagem
+(seção 3) só acontece depois do passo 4.
+
+### 2. Infraestrutura (uma vez por ambiente)
 
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars   # preencha project_id e ci_service_account_id
 terraform init
 terraform apply
+terraform output issuer                        # anote: vai para este repo e para a aplicação
 ```
 
 O Terraform cria o serviço do Cloud Run uma única vez, só para que o endereço exista
 e possa ser apontado no backend do gateway; todo o runtime (imagem, variáveis,
-secrets, escala) pertence ao deploy no GitHub Actions, e por isso o `template` está
-inteiro em `ignore_changes`. Essa divisão quebra o ciclo
+secrets, rede, escala) pertence ao deploy no GitHub Actions, e por isso o `template`
+está inteiro em `ignore_changes`. Essa divisão quebra o ciclo
 `ISSUER → hostname do gateway → backend → URL do serviço`, que impediria descrever
 tudo num `apply` só. A primeira revisão sobe com a imagem de bootstrap até o
 primeiro deploy do pipeline.
 
-### 2. Passos manuais depois do apply
+### 3. Passos manuais depois do apply
 
-Sem estes três, o primeiro deploy sobe e morre na partida.
+Sem estes três, o primeiro deploy sobe e morre na partida, ou responde `503`.
 
-O `apply` cria o secret `jwt-signing-key` **vazio**. Sem uma versão com o PEM, a
-leitura da configuração falha:
+**Chave de assinatura.** O `apply` cria o secret `jwt-signing-key` **vazio**. Sem
+uma versão com o PEM, a leitura da configuração falha:
 
 ```bash
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt-private.pem
@@ -294,19 +351,35 @@ gcloud secrets versions add jwt-signing-key --data-file=jwt-private.pem
 rm jwt-private.pem
 ```
 
-O papel de leitura no banco, com o usuário administrador do Cloud SQL — a senha vem
-do Secret Manager, nunca do arquivo:
+**Papel de leitura no banco.** Depois do deploy da aplicação com a migration V16
+(as views precisam existir), com o usuário `oficina_app`. O banco só tem IP privado,
+então a conexão passa pelo túnel do `tech-challenge-database`:
 
 ```bash
-psql -v senha="$(gcloud secrets versions access latest --secret=db-auth-password)" \
+# terminal 1 (tech-challenge-database)
+./scripts/cloudsql.sh tunnel
+
+# terminal 2 (este repositório)
+PGPASSWORD="$(gcloud secrets versions access latest --secret=tech-challenge-staging-db-password)" \
+psql "host=localhost port=5433 dbname=oficina user=oficina_app sslmode=require" \
+  -v senha="$(gcloud secrets versions access latest --secret=db-auth-password)" \
   -f sql/auth_ro.sql
 ```
 
-E os environments `staging` e `production` no GitHub, com as variáveis
-`GCP_PROJECT_ID`, `REGION`, `AUTH_ISSUER` (o output `issuer`) e `DB_URL`, mais o
-secret `GCP_SA_KEY`.
+**Environments `staging` e `production` no GitHub:**
 
-### 3. Pipeline
+| Tipo | Nome | Valor |
+| --- | --- | --- |
+| variable | `GCP_PROJECT_ID` | ID do projeto |
+| variable | `REGION` | `us-central1` |
+| variable | `AUTH_ISSUER` | output `issuer`, sem barra final |
+| variable | `DB_URL` | output `auth_db_url` do `tech-challenge-database` |
+| secret | `GCP_SA_KEY` | chave da SA `github-actions-cd` |
+
+A aplicação precisa da variable `AUTH_ISSUER_URI` com **exatamente** o mesmo valor de
+`AUTH_ISSUER`: o Spring compara o `iss` do token caractere por caractere.
+
+### 4. Pipeline
 
 Gitflow, com um workflow por responsabilidade — ver o
 [fluxo de entrega](docs/arquitetura.md#fluxo-de-entrega).
@@ -320,6 +393,12 @@ Gitflow, com um workflow por responsabilidade — ver o
 Produção nunca constrói imagem. O `cd-prod.yml` lê o digest do que está servindo em
 homologação e faz deploy dele, então o artefato aprovado é bit a bit o artefato
 promovido.
+
+O deploy configura a rede com **Direct VPC egress** (`--network=default
+--subnet=default --vpc-egress=private-ranges-only`) e limita a escala a
+`--max-instances=3`, o que dá no máximo 6 conexões no banco (3 × pool de 2) — o
+mesmo valor do `CONNECTION LIMIT` do `auth_ro`. Se o deploy falhar por permissão
+na subnet, conceda `roles/compute.networkUser` na subnet `default` à SA do CI.
 
 ### Rollback
 
@@ -354,22 +433,23 @@ gcloud run deploy oficina-auth --region=$REGION --image=$REPO@$DIGEST_ANTERIOR
   próximo passo natural.
 - **Sem rotação de chave.** O JWKS publica uma única chave. Rotacionar hoje invalida
   os tokens em circulação, porque não há período de sobreposição com duas chaves.
+- **Banco desligado fora de uso.** Por custo, a instância Cloud SQL fica desligada
+  quando o ambiente não está em uso, e o `cloudsql-power.yml` do
+  `tech-challenge-database` a desliga todas as noites. Nesse estado o
+  `POST /auth/token` responde `503`; o JWKS e o discovery continuam no ar.
 - **Repositórios JDBC sem teste de integração.** `JdbcClienteRepository` e
   `JdbcFuncionarioRepository` são testados com fakes de JDBC, então o SQL não é
   executado contra um Postgres de verdade; um erro de coluna ou tipo só apareceria
   em runtime. O smoke test do CD cobre o JWKS e o `400`, não o caminho de sucesso.
-- **`ADMIN` depende do schema do repositório dono.** A tabela `funcionario` é criada
-  fora deste serviço e hoje carrega
-  `CHECK (cargo IN ('ATENDENTE', 'MECANICO'))`. Este serviço já traduz `ADMIN`, mas
-  nenhuma linha pode receber esse cargo enquanto a constraint não for ampliada lá —
-  o papel está implementado e testado, sem dado possível para exercitá-lo em
-  produção.
+- **Status de cliente fixo.** A tabela `clientes` da aplicação não tem coluna de
+  status, então a view `cliente` publica todo cliente pessoa física como `ATIVO`. O
+  caminho de cliente inativo está implementado e testado aqui, mas só passa a ser
+  exercitado quando a aplicação ganhar inativação.
+- **`ADMIN` depende da aplicação.** A tabela `funcionarios` aceita apenas
+  `CHECK (cargo IN ('ATENDENTE', 'MECANICO'))`, e o enum de cargo da aplicação também
+  só conhece esses dois. Este serviço já traduz `ADMIN`, mas nenhum cadastro pode
+  receber esse cargo enquanto a constraint e o enum não forem ampliados lá.
 - **Um papel por token.** `roles` sai sempre com um elemento. Quem é cliente e
-  funcionário com o mesmo CPF ativo nos dois cadastros nunca obtém token de
-  funcionário, porque `cliente` é consultada primeiro. Emitir os dois papéis juntos
-  exigiria decidir qual `id` vai no `sub`.
-- **`FUNCIONARIO` não é emitido.** O `SecurityConfig` do serviço consumidor exige
-  `hasRole("FUNCIONARIO")` nos `GET /api/v2/funcionarios/**`. Como aqui sai apenas o
-  cargo específico, aquela regra precisa virar
-  `hasAnyRole("ATENDENTE", "MECANICO", "ADMIN")` — ou este serviço passar a incluir
-  um papel guarda-chuva no claim.
+  funcionário com o mesmo CPF nunca obtém token de funcionário, porque `cliente` é
+  consultada primeiro. Emitir os dois papéis juntos exigiria decidir qual `id` vai
+  no `sub`.
