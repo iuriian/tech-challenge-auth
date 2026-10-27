@@ -1,8 +1,8 @@
 package br.com.fiap.oficina.auth.infrastructure.persistence
 
 import br.com.fiap.oficina.auth.domain.CPF
-import br.com.fiap.oficina.auth.domain.ClienteId
 import br.com.fiap.oficina.auth.domain.StatusCliente
+import br.com.fiap.oficina.auth.domain.UsuarioId
 import br.com.fiap.oficina.auth.support.CPF_VALIDO_DIGITOS
 import br.com.fiap.oficina.auth.support.FakeDataSource
 import org.junit.jupiter.api.Test
@@ -31,7 +31,7 @@ class JdbcClienteRepositoryTest {
         val cliente = JdbcClienteRepository(ds).buscarPorCpf(cpf)
 
         assertEquals(
-            ClienteId(UUID.fromString("b3f1c2d4-0000-4000-8000-000000000009")),
+            UsuarioId(UUID.fromString("b3f1c2d4-0000-4000-8000-000000000009")),
             cliente?.id,
         )
         assertEquals("Joana Souza", cliente?.nome)

@@ -2,9 +2,9 @@ package br.com.fiap.oficina.auth.infrastructure.persistence
 
 import br.com.fiap.oficina.auth.domain.CPF
 import br.com.fiap.oficina.auth.domain.Cliente
-import br.com.fiap.oficina.auth.domain.ClienteId
 import br.com.fiap.oficina.auth.domain.ClienteRepository
 import br.com.fiap.oficina.auth.domain.StatusCliente
+import br.com.fiap.oficina.auth.domain.UsuarioId
 import java.util.UUID
 import javax.sql.DataSource
 
@@ -26,7 +26,7 @@ class JdbcClienteRepository(
                         null
                     } else {
                         Cliente(
-                            id = ClienteId(UUID.fromString(rs.getString("id"))),
+                            id = UsuarioId(UUID.fromString(rs.getString("id"))),
                             nome = rs.getString("nome"),
                             status = StatusCliente.de(rs.getString("status")),
                         )
