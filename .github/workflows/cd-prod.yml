@@ -94,7 +94,8 @@ jobs:
             --image="$IMAGEM" \
             --no-allow-unauthenticated \
             --service-account="auth-fn@${PROJECT}.iam.gserviceaccount.com" \
-            --vpc-connector=auth-connector \
+            --network=default \
+            --subnet=default \
             --vpc-egress=private-ranges-only \
             --port=8080 \
             --memory=512Mi \
@@ -102,7 +103,7 @@ jobs:
             --timeout=15s \
             --concurrency=8 \
             --min-instances=0 \
-            --max-instances=5 \
+            --max-instances=3 \
             --set-env-vars="ISSUER=${{ vars.AUTH_ISSUER }},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${{ vars.DB_URL }},DB_USER=auth_ro" \
             --set-secrets="JWT_PRIVATE_KEY=jwt-signing-key:latest,DB_PASSWORD=db-auth-password:latest"
           echo "issuer=${{ vars.AUTH_ISSUER }}" >> "$GITHUB_OUTPUT"
