@@ -10,14 +10,8 @@ variable "region" {
 
 variable "network" {
   type        = string
-  default     = "oficina-vpc"
-  description = "VPC criada no tech-challenge-infra-database"
-}
-
-variable "connector_cidr" {
-  type        = string
-  default     = "10.8.0.0/28"
-  description = "Faixa /28 livre na VPC (não pode sobrepor subnets nem ranges do GKE)"
+  default     = "default"
+  description = "VPC do GKE, onde o Cloud SQL tem IP privado (peering criado no tech-challenge-database)"
 }
 
 variable "service_name" {

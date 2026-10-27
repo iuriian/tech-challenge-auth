@@ -20,7 +20,3 @@ output "service_sa" {
 output "gateway_sa" {
   value = google_service_account.gateway.email
 }
-
-output "vpc_connector" {
-  value = google_vpc_access_connector.auth.name
-}
