@@ -2,13 +2,28 @@
 
 ## Propósito
 
-Serviço de autenticação dos clientes da oficina. Recebe um CPF, confere o cadastro
+Serviço de autenticação dos usuários da oficina. Recebe um CPF, confere o cadastro
 no banco e devolve um JWT RS256 assinado, que os demais serviços do sistema validam
 **offline** pelo JWKS publicado aqui — sem nenhuma chamada de volta a este serviço a
 cada requisição.
 
+Autentica os quatro papéis do sistema, cada um com a sua origem de cadastro:
+
+| Papel no claim `roles` | Tabela | Critério |
+| --- | --- | --- |
+| `CLIENTE` | `cliente` | `status = ATIVO` |
+| `ATENDENTE` | `funcionario` | `cargo = ATENDENTE` |
+| `MECANICO` | `funcionario` | `cargo = MECANICO` |
+| `ADMIN` | `funcionario` | `cargo = ADMIN` |
+
+O endpoint é um só: quem chama manda apenas o CPF e não escolhe o papel — ele é
+consequência de onde o cadastro está. A tabela `cliente` é consultada primeiro,
+então um CPF presente nas duas recebe o papel de menor privilégio; a tabela
+`funcionario` só é lida quando a primeira não produz ninguém apto. Ver
+[Fluxo de uma emissão](docs/arquitetura.md#fluxo-de-uma-emissão).
+
 É o único componente do sistema que emite identidade. Os outros serviços não
-conhecem CPF, não falam com a tabela de clientes e não guardam segredo de
+conhecem CPF, não falam com as tabelas de cadastro e não guardam segredo de
 assinatura: confiam no `iss`/`aud` do token e na chave pública do JWKS.
 
 Não há senha. O CPF é o único fator, por decisão de escopo do desafio — o serviço
@@ -89,7 +104,7 @@ Isso não afeta a renderização dos endpoints.
 
 | Método | Caminho | Resposta |
 | --- | --- | --- |
-| `POST` | `/auth/token` | `200` com o token, `400` CPF inválido, `401` cliente inexistente ou inativo, `503` falha interna |
+| `POST` | `/auth/token` | `200` com o token, `400` CPF inválido, `401` sem cadastro apto, `503` falha interna |
 | `GET` | `/.well-known/jwks.json` | `200` com o JWK Set (`public, max-age=300`) |
 | `GET` | `/.well-known/openid-configuration` | `200` com os metadados do emissor (`public, max-age=3600`) |
 
@@ -114,9 +129,14 @@ O CPF é aceito com ou sem máscara. Os erros seguem o formato do OAuth 2.0
 { "error": "invalid_request", "error_description": "CPF inválido" }
 ```
 
-Claims do token: `iss`, `sub` (o `id` do cliente), `aud`, `iat`, `nbf`, `exp`,
-`jti`, mais `name` e `roles: ["CLIENTE"]`. O header leva `kid` — o thumbprint da
-chave — para que o consumidor escolha a chave certa no JWKS.
+Claims do token: `iss`, `sub` (o `id` da linha de cadastro), `aud`, `iat`, `nbf`,
+`exp`, `jti`, mais `name` e `roles`. O header leva `kid` — o thumbprint da chave —
+para que o consumidor escolha a chave certa no JWKS.
+
+O `roles` é sempre uma lista de **um** elemento, com um dos quatro papéis da tabela
+acima — `["CLIENTE"]`, `["ATENDENTE"]`, `["MECANICO"]` ou `["ADMIN"]`. A lista
+existe porque é o formato que o `JwtGrantedAuthoritiesConverter` do consumidor
+espera, não porque um token acumule papéis.
 
 ### Coleção do Postman
 
@@ -124,8 +144,9 @@ chave — para que o consumidor escolha a chave certa no JWKS.
 
 Importe no Postman e ajuste a variável `issuer` — `http://localhost:8081` para a
 execução local, ou o output `issuer` do Terraform para homologação e produção. A
-coleção cobre os três resultados do endpoint de token (`200`, `400` e `401`) mais o
-JWKS e o discovery.
+coleção cobre um `200` por papel (cliente, atendente, mecânico e admin), o `400` e o
+`401`, mais o JWKS e o discovery. Os CPFs ficam em variáveis que correspondem ao seed
+desta página.
 
 ## Execução local
 
@@ -146,14 +167,26 @@ CREATE TABLE cliente (
   cpf    text NOT NULL,
   status text NOT NULL
 );
+CREATE TABLE funcionario (
+  id    uuid PRIMARY KEY,
+  nome  text NOT NULL,
+  cpf   text NOT NULL,
+  cargo text NOT NULL
+);
 INSERT INTO cliente VALUES
   (gen_random_uuid(), 'Cliente Ativo',   '52998224725', 'ATIVO'),
   (gen_random_uuid(), 'Cliente Inativo', '11144477735', 'INATIVO');
+INSERT INTO funcionario VALUES
+  (gen_random_uuid(), 'Atendente Ana',  '39053344705', 'ATENDENTE'),
+  (gen_random_uuid(), 'Mecânico Bruno', '28625587887', 'MECANICO'),
+  (gen_random_uuid(), 'Admin Carla',    '45317828791', 'ADMIN');
 SQL
 ```
 
 O `SELECT` casa o CPF com e sem máscara (`WHERE cpf IN (?, ?)`), então qualquer um
-dos dois formatos serve na coluna.
+dos dois formatos serve na coluna. As duas tabelas são lidas com quatro colunas
+nomeadas, nunca `SELECT *` — é exatamente o que o `GRANT` por coluna do `auth_ro`
+concede, e o teste de cada repositório trava isso.
 
 ### 2. Chave de assinatura
 
@@ -182,6 +215,18 @@ do stack na máquina. Para validar:
 curl -s localhost:8081/.well-known/jwks.json | jq '.keys[0].kid'
 curl -s -X POST localhost:8081/auth/token \
   -H 'Content-Type: application/json' -d '{"cpf":"529.982.247-25"}' | jq
+```
+
+Para ver qual papel saiu no token, trocando o CPF pelos do seed acima:
+
+```bash
+curl -s -X POST localhost:8081/auth/token \
+  -H 'Content-Type: application/json' -d '{"cpf":"390.533.447-05"}' |
+  jq -r .access_token | cut -d. -f2 | base64 -d | jq '{sub, name, roles}'
+```
+
+```json
+{ "sub": "a3c1...", "name": "Atendente Ana", "roles": ["ATENDENTE"] }
 ```
 
 ### Rodar como container
@@ -309,7 +354,22 @@ gcloud run deploy oficina-auth --region=$REGION --image=$REPO@$DIGEST_ANTERIOR
   próximo passo natural.
 - **Sem rotação de chave.** O JWKS publica uma única chave. Rotacionar hoje invalida
   os tokens em circulação, porque não há período de sobreposição com duas chaves.
-- **`JdbcClienteRepository` sem teste de integração.** Os testes usam fakes de JDBC,
-  então o SQL não é executado contra um Postgres de verdade; um erro de coluna ou
-  tipo só apareceria em runtime. O smoke test do CD cobre o JWKS e o `400`, não o
-  caminho de sucesso.
+- **Repositórios JDBC sem teste de integração.** `JdbcClienteRepository` e
+  `JdbcFuncionarioRepository` são testados com fakes de JDBC, então o SQL não é
+  executado contra um Postgres de verdade; um erro de coluna ou tipo só apareceria
+  em runtime. O smoke test do CD cobre o JWKS e o `400`, não o caminho de sucesso.
+- **`ADMIN` depende do schema do repositório dono.** A tabela `funcionario` é criada
+  fora deste serviço e hoje carrega
+  `CHECK (cargo IN ('ATENDENTE', 'MECANICO'))`. Este serviço já traduz `ADMIN`, mas
+  nenhuma linha pode receber esse cargo enquanto a constraint não for ampliada lá —
+  o papel está implementado e testado, sem dado possível para exercitá-lo em
+  produção.
+- **Um papel por token.** `roles` sai sempre com um elemento. Quem é cliente e
+  funcionário com o mesmo CPF ativo nos dois cadastros nunca obtém token de
+  funcionário, porque `cliente` é consultada primeiro. Emitir os dois papéis juntos
+  exigiria decidir qual `id` vai no `sub`.
+- **`FUNCIONARIO` não é emitido.** O `SecurityConfig` do serviço consumidor exige
+  `hasRole("FUNCIONARIO")` nos `GET /api/v2/funcionarios/**`. Como aqui sai apenas o
+  cargo específico, aquela regra precisa virar
+  `hasAnyRole("ATENDENTE", "MECANICO", "ADMIN")` — ou este serviço passar a incluir
+  um papel guarda-chuva no claim.

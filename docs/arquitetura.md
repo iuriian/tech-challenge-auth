@@ -47,17 +47,21 @@ flowchart TB
         AR["AuthRoutes"]
     end
     subgraph A["application"]
-        UC["AutenticarClienteUseCase"]
+        UC["AutenticarUsuarioUseCase"]
         PE["porta<br/>EmissorDeToken"]
         PC["porta<br/>ChavesPublicas"]
     end
     subgraph D["domain"]
         CPF["CPF"]
+        USU["Usuario (selada)<br/>Papel, UsuarioId"]
         CLI["Cliente<br/>StatusCliente"]
+        FUN["Funcionario"]
         PR["porta<br/>ClienteRepository"]
+        PF["porta<br/>FuncionarioRepository"]
     end
     subgraph I["infrastructure"]
         JR["JdbcClienteRepository"]
+        JF["JdbcFuncionarioRepository"]
         NT["NimbusTokenAdapter"]
         CF["TokenSettings<br/>DatabaseSettings"]
         DI["Modules (Koin)"]
@@ -67,10 +71,14 @@ flowchart TB
     AR --> UC
     AR --> PC
     UC --> PR
+    UC --> PF
     UC --> PE
     UC --> CPF
-    UC --> CLI
+    UC --> USU
+    CLI -.->|"implementa"| USU
+    FUN -.->|"implementa"| USU
     JR -.->|"implementa"| PR
+    JF -.->|"implementa"| PF
     NT -.->|"implementa"| PE
     NT -.->|"implementa"| PC
     DI -.->|"monta o grafo"| AR
@@ -79,16 +87,21 @@ flowchart TB
     classDef app fill:#1f4e79,stroke:#102a43,color:#fff
     classDef inf fill:#6b4c9a,stroke:#3b2a57,color:#fff
     classDef pre fill:#8a5a1b,stroke:#4d3110,color:#fff
-    class CPF,CLI,PR dom
+    class CPF,USU,CLI,FUN,PR,PF dom
     class UC,PE,PC app
-    class JR,NT,CF,DI inf
+    class JR,JF,NT,CF,DI inf
     class SV,AR pre
 ```
 
-As setas pontilhadas são as inversões: `JdbcClienteRepository` e
-`NimbusTokenAdapter` vivem na infraestrutura mas implementam contratos declarados
-nas camadas de dentro. Trocar Postgres por outro banco, ou Nimbus por outra
-biblioteca de JOSE, não toca domínio nem aplicação.
+As setas pontilhadas são as inversões: `JdbcClienteRepository`,
+`JdbcFuncionarioRepository` e `NimbusTokenAdapter` vivem na infraestrutura mas
+implementam contratos declarados nas camadas de dentro. Trocar Postgres por outro
+banco, ou Nimbus por outra biblioteca de JOSE, não toca domínio nem aplicação.
+
+`Usuario` é a interface selada que fecha o conjunto de identidades: `Cliente` e
+`Funcionario`. É o que permite ao caso de uso tratar as duas tabelas pelo mesmo
+caminho e ao emissor montar o token sabendo apenas `id`, `nome` e `papel` — a
+origem do cadastro não vaza para fora do domínio.
 
 ## Runtime no GCP
 
@@ -113,8 +126,8 @@ flowchart LR
 
 O Cloud Run roda com `--no-allow-unauthenticated`: o único chamador autorizado é a
 service account do gateway. O acesso ao banco é só leitura em três níveis — o papel
-`auth_ro` tem `SELECT` em quatro colunas e `default_transaction_read_only`, e o pool
-do Hikari sobe com `isReadOnly`.
+`auth_ro` tem `SELECT` em quatro colunas de `cliente` e quatro de `funcionario`, mais
+`default_transaction_read_only`, e o pool do Hikari sobe com `isReadOnly`.
 
 O Terraform cria o serviço do Cloud Run uma única vez, só para que o endereço exista
 e possa ser apontado no backend do gateway; todo o runtime pertence ao deploy no
@@ -133,13 +146,28 @@ sequenceDiagram
     G->>S: repassa autenticado por IAM
     S->>S: CPF.parse — dígitos verificadores
     S->>DB: SELECT id, nome, status FROM cliente
-    DB-->>S: cadastro
-    S->>S: status ATIVO? assina RS256 com kid
+    DB-->>S: cadastro de cliente
+    alt cliente com status ATIVO
+        S->>S: papel CLIENTE
+    else sem cliente apto
+        S->>DB: SELECT id, nome, cargo FROM funcionario
+        DB-->>S: cadastro de funcionário
+        S->>S: cargo traduzido em ATENDENTE, MECANICO ou ADMIN
+    end
+    S->>S: assina RS256 com kid
     S-->>C: 200 {access_token, token_type, expires_in}
 ```
 
-Cliente inexistente e cliente inativo produzem a mesma resposta `401`
-(`invalid_grant`), de propósito: a diferença revelaria quais CPFs têm cadastro.
+A tabela `cliente` é consultada primeiro por duas razões que apontam para o mesmo
+lado: é o caso comum, resolvido numa única consulta, e um CPF cadastrado nas duas
+tabelas acaba recebendo o papel de menor privilégio. A segunda consulta só acontece
+quando a primeira não produz ninguém apto — inclusive quando o cliente existe mas
+está inativo, para que um cadastro inativo não esconda o cadastro de funcionário do
+mesmo CPF.
+
+Cadastro inexistente, cliente inativo e cargo que o domínio não reconhece produzem
+todos a mesma resposta `401` (`invalid_grant`), de propósito: a diferença revelaria
+quais CPFs têm cadastro e em qual tabela.
 
 ## Fluxo de entrega
 

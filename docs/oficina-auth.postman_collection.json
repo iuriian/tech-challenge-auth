@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "oficina-auth",
-    "description": "Autenticação de clientes da oficina por CPF. Defina a variável issuer: http://localhost:8081 para execução local, ou o output issuer do Terraform para homologação e produção. Os CPFs das variáveis cpf_ativo e cpf_inativo correspondem ao seed documentado no README.",
+    "description": "Autenticação dos usuários da oficina por CPF. Defina a variável issuer: http://localhost:8081 para execução local, ou o output issuer do Terraform para homologação e produção. Os CPFs das variáveis correspondem ao seed documentado no README: cpf_ativo e cpf_inativo estão na tabela cliente, cpf_atendente, cpf_mecanico e cpf_admin na tabela funcionario. O papel do token é consequência de onde o cadastro está — o endpoint é o mesmo para todos.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -16,6 +16,18 @@
     {
       "key": "cpf_inativo",
       "value": "111.444.777-35"
+    },
+    {
+      "key": "cpf_atendente",
+      "value": "390.533.447-05"
+    },
+    {
+      "key": "cpf_mecanico",
+      "value": "286.255.878-87"
+    },
+    {
+      "key": "cpf_admin",
+      "value": "453.178.287-91"
     }
   ],
   "item": [
@@ -34,7 +46,61 @@
           "raw": "{\n  \"cpf\": \"{{cpf_ativo}}\"\n}"
         },
         "url": "{{issuer}}/auth/token",
-        "description": "Devolve access_token, token_type e expires_in."
+        "description": "Devolve access_token, token_type e expires_in. O claim roles sai como [\"CLIENTE\"]."
+      }
+    },
+    {
+      "name": "Token — atendente (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_atendente}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "CPF da tabela funcionario com cargo ATENDENTE. O claim roles sai como [\"ATENDENTE\"]."
+      }
+    },
+    {
+      "name": "Token — mecânico (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_mecanico}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "CPF da tabela funcionario com cargo MECANICO. O claim roles sai como [\"MECANICO\"]."
+      }
+    },
+    {
+      "name": "Token — admin (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cpf\": \"{{cpf_admin}}\"\n}"
+        },
+        "url": "{{issuer}}/auth/token",
+        "description": "CPF da tabela funcionario com cargo ADMIN. O claim roles sai como [\"ADMIN\"]. Depende de a tabela aceitar esse cargo — ver Limitações conhecidas no README."
       }
     },
     {
@@ -70,7 +136,7 @@
           "raw": "{\n  \"cpf\": \"{{cpf_inativo}}\"\n}"
         },
         "url": "{{issuer}}/auth/token",
-        "description": "CPF válido, mas status diferente de ATIVO: error invalid_grant. A mesma resposta sai para CPF sem cadastro, de propósito, para não revelar quem existe."
+        "description": "CPF válido, mas status diferente de ATIVO e sem cadastro na tabela funcionario: error invalid_grant. A mesma resposta sai para CPF sem cadastro nenhum e para cargo que o serviço não reconhece, de propósito, para não revelar quem existe nem em qual tabela."
       }
     },
     {
