@@ -13,17 +13,67 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
+  config:
+    name: Configuração do ambiente
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      project: ${{ steps.ler.outputs.project }}
+      region: ${{ steps.ler.outputs.region }}
+      issuer: ${{ steps.terraform.outputs.issuer }}
+      db_url: ${{ steps.terraform.outputs.db_url }}
+      image_repo: ${{ steps.terraform.outputs.image_repo }}
+    env:
+      ENVIRONMENT: staging
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Projeto e região
+        id: ler
+        run: |
+          TFVARS="environments/${ENVIRONMENT}.tfvars"
+          read_var() { sed -n "s/^$1 *= *\"\(.*\)\"/\1/p" "$TFVARS"; }
+          PROJECT="$(read_var project_id)"
+          case "$PROJECT" in
+            ""|PREENCHER*) echo "::error::Preencha project_id em $TFVARS"; exit 1 ;;
+          esac
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+          echo "region=$(read_var region)" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      # ISSUER, DB_URL e o caminho da imagem saem do state, não de variables
+      # preenchidas à mão: o Spring compara o iss caractere por caractere, e o
+      # IP privado do Cloud SQL muda quando a instância é recriada.
+      - name: Endereços do Terraform
+        id: terraform
+        run: |
+          terraform init -input=false -backend-config="environments/${ENVIRONMENT}.gcs.tfbackend"
+          {
+            echo "issuer=$(terraform output -raw issuer)"
+            echo "db_url=$(terraform output -raw db_url)"
+            echo "image_repo=$(terraform output -raw image_repo)"
+          } >> "$GITHUB_OUTPUT"
+
   imagem:
     name: Imagem (build e push)
-    needs: ci
+    needs: [ci, config]
     runs-on: ubuntu-latest
     environment: staging
     outputs:
       ref: ${{ steps.publicar.outputs.ref }}
     env:
-      PROJECT: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.REGION }}
-      SERVICE: oficina-auth
+      REGION: ${{ needs.config.outputs.region }}
+      REPO: ${{ needs.config.outputs.image_repo }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +96,6 @@ jobs:
       - name: Build e push da imagem
         id: publicar
         run: |
-          REPO="${REGION}-docker.pkg.dev/${PROJECT}/oficina-auth/${SERVICE}"
           docker build -t "${REPO}:${GITHUB_SHA}" -t "${REPO}:latest" .
           docker push "${REPO}:${GITHUB_SHA}"
           docker push "${REPO}:latest"
@@ -54,15 +103,15 @@ jobs:
 
   deploy:
     name: Deploy em homologação
-    needs: imagem
+    needs: [config, imagem]
     runs-on: ubuntu-latest
     environment: staging
-    outputs:
-      issuer: ${{ steps.entregar.outputs.issuer }}
     env:
-      PROJECT: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.REGION }}
+      PROJECT: ${{ needs.config.outputs.project }}
+      REGION: ${{ needs.config.outputs.region }}
       SERVICE: oficina-auth
+      ISSUER: ${{ needs.config.outputs.issuer }}
+      DB_URL: ${{ needs.config.outputs.db_url }}
     steps:
       - uses: google-github-actions/auth@v2
         with:
@@ -71,7 +120,6 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy no Cloud Run
-        id: entregar
         run: |
           gcloud run deploy "$SERVICE" \
             --project="$PROJECT" \
@@ -89,16 +137,15 @@ jobs:
             --concurrency=8 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="ISSUER=${{ vars.AUTH_ISSUER }},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${{ vars.DB_URL }},DB_USER=auth_ro" \
+            --set-env-vars="ISSUER=${ISSUER},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${DB_URL},DB_USER=auth_ro" \
             --set-secrets="JWT_PRIVATE_KEY=jwt-signing-key:latest,DB_PASSWORD=db-auth-password:latest"
-          echo "issuer=${{ vars.AUTH_ISSUER }}" >> "$GITHUB_OUTPUT"
 
   smoke-test:
     name: Smoke test
-    needs: deploy
+    needs: [config, deploy]
     runs-on: ubuntu-latest
     env:
-      ISSUER: ${{ needs.deploy.outputs.issuer }}
+      ISSUER: ${{ needs.config.outputs.issuer }}
     steps:
       - name: JWKS publica ao menos uma chave
         run: curl -fsS "$ISSUER/.well-known/jwks.json" | jq -e '.keys | length > 0'

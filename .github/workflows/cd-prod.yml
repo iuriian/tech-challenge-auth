@@ -10,15 +10,69 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  config:
+    name: Configuração dos ambientes
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      staging_project: ${{ steps.ler.outputs.staging_project }}
+      staging_region: ${{ steps.ler.outputs.staging_region }}
+      project: ${{ steps.ler.outputs.project }}
+      region: ${{ steps.ler.outputs.region }}
+      issuer: ${{ steps.terraform.outputs.issuer }}
+      db_url: ${{ steps.terraform.outputs.db_url }}
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      # A promoção lê a revisão no ar em homologação e aplica em produção, então
+      # este workflow precisa dos dois ambientes.
+      - name: Projetos e regiões
+        id: ler
+        run: |
+          read_var() { sed -n "s/^$2 *= *\"\(.*\)\"/\1/p" "environments/$1.tfvars"; }
+          for AMBIENTE in staging production; do
+            PROJECT="$(read_var "$AMBIENTE" project_id)"
+            case "$PROJECT" in
+              ""|PREENCHER*) echo "::error::Preencha project_id em environments/${AMBIENTE}.tfvars"; exit 1 ;;
+            esac
+          done
+          {
+            echo "staging_project=$(read_var staging project_id)"
+            echo "staging_region=$(read_var staging region)"
+            echo "project=$(read_var production project_id)"
+            echo "region=$(read_var production region)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Endereços do Terraform
+        id: terraform
+        run: |
+          terraform init -input=false -backend-config="environments/production.gcs.tfbackend"
+          {
+            echo "issuer=$(terraform output -raw issuer)"
+            echo "db_url=$(terraform output -raw db_url)"
+          } >> "$GITHUB_OUTPUT"
+
   digest:
     name: Digest em homologação
+    needs: config
     runs-on: ubuntu-latest
     environment: staging
     outputs:
       imagem: ${{ steps.resolver.outputs.imagem }}
     env:
-      PROJECT: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.REGION }}
+      PROJECT: ${{ needs.config.outputs.staging_project }}
+      REGION: ${{ needs.config.outputs.staging_region }}
       SERVICE: oficina-auth
     steps:
       - uses: google-github-actions/auth@v2
@@ -68,16 +122,16 @@ jobs:
 
   deploy:
     name: Deploy em produção
-    needs: digest
+    needs: [config, digest]
     runs-on: ubuntu-latest
     environment: production
-    outputs:
-      issuer: ${{ steps.entregar.outputs.issuer }}
     env:
-      PROJECT: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.REGION }}
+      PROJECT: ${{ needs.config.outputs.project }}
+      REGION: ${{ needs.config.outputs.region }}
       SERVICE: oficina-auth
       IMAGEM: ${{ needs.digest.outputs.imagem }}
+      ISSUER: ${{ needs.config.outputs.issuer }}
+      DB_URL: ${{ needs.config.outputs.db_url }}
     steps:
       - uses: google-github-actions/auth@v2
         with:
@@ -86,7 +140,6 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy no Cloud Run
-        id: entregar
         run: |
           gcloud run deploy "$SERVICE" \
             --project="$PROJECT" \
@@ -104,16 +157,15 @@ jobs:
             --concurrency=8 \
             --min-instances=0 \
             --max-instances=3 \
-            --set-env-vars="ISSUER=${{ vars.AUTH_ISSUER }},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${{ vars.DB_URL }},DB_USER=auth_ro" \
+            --set-env-vars="ISSUER=${ISSUER},AUDIENCE=oficina,TOKEN_TTL_SECONDS=3600,DB_URL=${DB_URL},DB_USER=auth_ro" \
             --set-secrets="JWT_PRIVATE_KEY=jwt-signing-key:latest,DB_PASSWORD=db-auth-password:latest"
-          echo "issuer=${{ vars.AUTH_ISSUER }}" >> "$GITHUB_OUTPUT"
 
   smoke-test:
     name: Smoke test
-    needs: deploy
+    needs: [config, deploy]
     runs-on: ubuntu-latest
     env:
-      ISSUER: ${{ needs.deploy.outputs.issuer }}
+      ISSUER: ${{ needs.config.outputs.issuer }}
     steps:
       - name: JWKS publica ao menos uma chave
         run: curl -fsS "$ISSUER/.well-known/jwks.json" | jq -e '.keys | length > 0'
