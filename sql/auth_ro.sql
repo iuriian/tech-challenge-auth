@@ -1,13 +1,19 @@
 -- ============================================================================
 -- Role de leitura do servico de autenticacao.
 --
--- QUANDO: uma unica vez por ambiente, DEPOIS do primeiro deploy da app com a
--- migration V16 (que cria as views cliente e funcionario). Antes disso os
--- GRANTs falham com "relation does not exist".
+-- QUANDO: depois do primeiro deploy da app com a migration V16, que cria as
+-- views cliente e funcionario. Antes disso os GRANTs falham com
+-- "relation does not exist".
 --
--- COMO: com o usuario oficina_app, que e dono das tabelas e das views e, como
--- membro de cloudsqlsuperuser, pode criar roles. O banco so tem IP privado,
--- entao a conexao passa pelo tunel do repositorio tech-challenge-database:
+-- COMO: pelo workflow .github/workflows/db-grants.yml (Actions -> "Banco -
+-- papel auth_ro" -> Run workflow). Ele liga a instancia se preciso, roda este
+-- arquivo num pod descartavel do GKE -- a unica rota ate o IP privado do banco
+-- -- e devolve a instancia ao estado em que estava.
+--
+-- O arquivo e idempotente: rodar de novo realinha a senha e os GRANTs, nao
+-- falha. E o que permite que o workflow seja repetivel.
+--
+-- Localmente, pelo tunel do tech-challenge-database, se for preciso depurar:
 --
 --   # terminal 1 (tech-challenge-database)
 --   ./scripts/cloudsql.sh tunnel
@@ -18,13 +24,22 @@
 --     -v senha="$(gcloud secrets versions access latest --secret=db-auth-password)" \
 --     -f sql/auth_ro.sql
 --
--- A senha vem do Secret Manager (db-auth-password, criado pelo
+-- Em qualquer rota, quem roda e o oficina_app: ele e dono das tabelas e das
+-- views e, como membro de cloudsqlsuperuser, pode criar roles. A senha do
+-- auth_ro vem do Secret Manager (db-auth-password, criado pelo
 -- tech-challenge-database), nunca deste arquivo.
 --
 -- POR QUE SQL E NAO google_sql_user: usuarios criados pela API do Cloud SQL
 -- entram no grupo cloudsqlsuperuser, o que anularia o GRANT por coluna abaixo.
 -- ============================================================================
-CREATE ROLE auth_ro LOGIN PASSWORD :'senha';
+
+-- CREATE ROLE falharia na segunda execucao; o ALTER logo abaixo e que define a
+-- senha, nas duas rotas.
+SELECT 'CREATE ROLE auth_ro NOLOGIN'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auth_ro')
+\gexec
+
+ALTER ROLE auth_ro LOGIN PASSWORD :'senha';
 
 GRANT CONNECT ON DATABASE oficina TO auth_ro;
 GRANT USAGE ON SCHEMA public TO auth_ro;
