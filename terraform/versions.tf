@@ -7,8 +7,8 @@ terraform {
   }
 
   backend "gcs" {
-    bucket = "oficina-tfstate"
-    prefix = "auth"
+    bucket = "tech-challenge-507123-tfstate"
+    prefix = "tech-challenge/auth/staging"
   }
 }
 
