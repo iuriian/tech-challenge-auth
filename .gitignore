@@ -5,6 +5,14 @@ build/
 !**/src/test/**/build/
 *.pem
 
+# Chaves de service account: nunca versionar. O bootstrap-ci.sh grava a dele
+# fora do repositorio, mas um download pelo console cai aqui por descuido.
+*-sa.json
+sa-key*.json
+*service-account*.json
+gha-creds-*.json
+chave.json
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml

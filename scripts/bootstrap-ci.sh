@@ -82,4 +82,5 @@ fi
 
 echo
 echo "Pronto. Falta apenas o secret GCP_SA_KEY no Environment ${AMBIENTE} do GitHub:"
-echo "  gcloud iam service-accounts keys create chave.json --iam-account=${SA}"
+echo "  gcloud iam service-accounts keys create \$HOME/chave.json --iam-account=${SA}"
+echo "  (fora do repositorio de proposito; apague depois de colar no GitHub)"
