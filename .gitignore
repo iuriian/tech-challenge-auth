@@ -50,6 +50,13 @@ bin/
 *.tfstate
 *.tfstate.*
 *.tfvars
+!*.tfvars.example
+# Versionados de propósito: é deles que o CI lê project_id e region.
+!**/environments/*.tfvars
+
+# Gerados pelos workflows terraform-ci.yml e terraform-cd.yml
+tfplan
+plan.txt
 .terraform.tfstate.lock.info
 crash.log
 crash.*.log

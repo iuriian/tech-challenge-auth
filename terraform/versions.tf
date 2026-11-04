@@ -4,12 +4,11 @@ terraform {
   required_providers {
     google      = { source = "hashicorp/google", version = "~> 8.0" }
     google-beta = { source = "hashicorp/google-beta", version = "~> 8.0" }
+    tls         = { source = "hashicorp/tls", version = "~> 4.0" }
   }
 
-  backend "gcs" {
-    bucket = "tech-challenge-507123-tfstate"
-    prefix = "tech-challenge/auth/staging"
-  }
+  # bucket e prefix vem de environments/<ambiente>.gcs.tfbackend
+  backend "gcs" {}
 }
 
 provider "google" {
