@@ -312,23 +312,70 @@ Este serviço depende de recursos criados em outros três lugares. Aplique na or
 | Ordem | Repositório | Entrega para este serviço |
 | --- | --- | --- |
 | 1 | `Tech-Challenge` (`terraform/`) | VPC `default` e SA `github-actions-cd`, lidas como `data` |
-| 2 | `tech-challenge-database` | Cloud SQL com IP privado, peering e o secret `db-auth-password`, lido como `data` |
+| 2 | `tech-challenge-database` | Cloud SQL com IP privado, peering, o secret `db-auth-password` lido como `data` e o output `auth_db_url`, lido do state |
 | 3 | **este repositório** | Cloud Run, API Gateway e o output `issuer` |
 | 4 | `Tech-Challenge` (app) | as views `cliente` e `funcionario` (migration V16) |
 
 O passo 4 vem depois deste porque a aplicação precisa do `issuer` para validar os
-tokens, e este serviço precisa das views para emitir. Por isso o deploy da imagem
-(seção 3) só acontece depois do passo 4.
+tokens, e este serviço precisa das views para emitir. É por isso que o papel de
+leitura no banco (seção 4) é um passo à parte, e não parte do `apply`.
 
-### 2. Infraestrutura (uma vez por ambiente)
+### 2. Bootstrap da SA do CI (uma vez por ambiente)
+
+O único passo que o pipeline não pode dar por si: é ele que dá ao pipeline o
+direito de rodar. Com uma conta owner do projeto:
+
+```bash
+./scripts/bootstrap-ci.sh staging
+```
+
+O script concede à SA do CI os nove papéis que o `apply` exige — nenhum deles
+`editor` ou `owner`, cada um justificado no próprio arquivo — e `objectAdmin` no
+bucket do state. Depois, a chave que o Actions usa:
+
+```bash
+gcloud iam service-accounts keys create chave.json \
+  --iam-account="$(cd terraform && terraform output -raw service_sa | sed 's/auth-fn/github-actions-cd/')"
+```
+
+| Environment | Tipo | Nome | Valor |
+| --- | --- | --- | --- |
+| `staging` e `production` | secret | `GCP_SA_KEY` | conteúdo de `chave.json` |
+
+Esse secret é o **único** item de configuração no GitHub. `project_id` e `region`
+saem de `terraform/environments/<ambiente>.tfvars`; `ISSUER`, `DB_URL` e o caminho
+da imagem saem dos outputs do Terraform, lidos pelo próprio deploy. Copiar o
+`issuer` à mão era a parte mais frágil do processo — o Spring compara o `iss`
+caractere por caractere, e um `/` sobrando reprovava todo token.
+
+A aplicação continua precisando da variable `AUTH_ISSUER_URI` com o mesmo valor do
+output `issuer`, porque vive em outro repositório.
+
+### 3. Infraestrutura
+
+`terraform-cd.yml` faz o `apply`: push em `release/**` aplica homologação, push em
+`main` aplica produção, e o `workflow_dispatch` permite escolher o ambiente.
+Produção só é aceita a partir da `main`. O resumo da execução traz `issuer`,
+`service_url`, `db_url` e `image_repo` — não é preciso rodar `terraform output`
+localmente.
+
+Em PR que toca `terraform/`, o `terraform-ci.yml` roda `fmt`, `validate` e `plan`
+contra o ambiente correspondente à branch de destino, e publica o plan no resumo.
+
+Para rodar localmente, com os mesmos arquivos que o workflow usa:
 
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # preencha project_id e ci_service_account_id
-terraform init
-terraform apply
-terraform output issuer                        # anote: vai para este repo e para a aplicação
+terraform init -backend-config=environments/staging.gcs.tfbackend
+terraform apply -var-file=environments/staging.tfvars
 ```
+
+O `apply` gera a chave de assinatura (`tls_private_key`) e publica o PEM como
+versão do secret `jwt-signing-key`, então o serviço sobe com a chave já no lugar.
+O PEM fica no state — mesmo arranjo da senha do `auth_ro` no
+`tech-challenge-database`. Rotacionar é
+`terraform apply -replace=tls_private_key.jwt`, que invalida os tokens em
+circulação (ver [Limitações conhecidas](#limitações-conhecidas)).
 
 O Terraform cria o serviço do Cloud Run uma única vez, só para que o endereço exista
 e possa ser apontado no backend do gateway; todo o runtime (imagem, variáveis,
@@ -338,48 +385,23 @@ está inteiro em `ignore_changes`. Essa divisão quebra o ciclo
 tudo num `apply` só. A primeira revisão sobe com a imagem de bootstrap até o
 primeiro deploy do pipeline.
 
-### 3. Passos manuais depois do apply
+### 4. Papel de leitura no banco
 
-Sem estes três, o primeiro deploy sobe e morre na partida, ou responde `503`.
+**Actions → "Banco - papel auth_ro" → Run workflow.** O workflow roda
+[`sql/auth_ro.sql`](sql/auth_ro.sql), que cria o papel e concede `SELECT` por
+coluna nas views.
 
-**Chave de assinatura.** O `apply` cria o secret `jwt-signing-key` **vazio**. Sem
-uma versão com o PEM, a leitura da configuração falha:
+É dispatch manual, e não automático, por depender de um fato de fora deste
+repositório: as views `cliente` e `funcionario` só existem depois do deploy da
+aplicação com a migration V16, e antes disso os `GRANT`s falham com
+`relation does not exist`. O script é idempotente, então repetir é seguro.
 
-```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt-private.pem
-gcloud secrets versions add jwt-signing-key --data-file=jwt-private.pem
-rm jwt-private.pem
-```
+Como o banco só tem IP privado, o `psql` roda num pod descartável do GKE — a mesma
+travessia que o `scripts/cloudsql.sh` do `tech-challenge-database` faz com socat. O
+workflow liga a instância se ela estiver desligada e a devolve ao estado anterior no
+final, mesmo em caso de falha.
 
-**Papel de leitura no banco.** Depois do deploy da aplicação com a migration V16
-(as views precisam existir), com o usuário `oficina_app`. O banco só tem IP privado,
-então a conexão passa pelo túnel do `tech-challenge-database`:
-
-```bash
-# terminal 1 (tech-challenge-database)
-./scripts/cloudsql.sh tunnel
-
-# terminal 2 (este repositório)
-PGPASSWORD="$(gcloud secrets versions access latest --secret=tech-challenge-staging-db-password)" \
-psql "host=localhost port=5433 dbname=oficina user=oficina_app sslmode=require" \
-  -v senha="$(gcloud secrets versions access latest --secret=db-auth-password)" \
-  -f sql/auth_ro.sql
-```
-
-**Environments `staging` e `production` no GitHub:**
-
-| Tipo | Nome | Valor |
-| --- | --- | --- |
-| variable | `GCP_PROJECT_ID` | ID do projeto |
-| variable | `REGION` | `us-central1` |
-| variable | `AUTH_ISSUER` | output `issuer`, sem barra final |
-| variable | `DB_URL` | output `auth_db_url` do `tech-challenge-database` |
-| secret | `GCP_SA_KEY` | chave da SA `github-actions-cd` |
-
-A aplicação precisa da variable `AUTH_ISSUER_URI` com **exatamente** o mesmo valor de
-`AUTH_ISSUER`: o Spring compara o `iss` do token caractere por caractere.
-
-### 4. Pipeline
+### 5. Pipeline
 
 Gitflow, com um workflow por responsabilidade — ver o
 [fluxo de entrega](docs/arquitetura.md#fluxo-de-entrega).
@@ -387,8 +409,11 @@ Gitflow, com um workflow por responsabilidade — ver o
 | Workflow | Dispara em | Faz |
 | --- | --- | --- |
 | `ci.yml` | PR para `develop` ou `main`; `workflow_call` | Um job por checagem: formatação, análise estática, testes com cobertura, fat JAR |
+| `terraform-ci.yml` | PR que toca `terraform/` | `fmt`, `validate` e `plan` do ambiente da branch de destino |
+| `terraform-cd.yml` | push em `release/**` ou `main` que toca `terraform/`; manual | `apply` em homologação ou produção |
 | `cd-homolog.yml` | push em `release/**`; manual | Chama o CI, constrói e publica a imagem, faz deploy em homologação, roda smoke test |
 | `cd-prod.yml` | push em `main`; manual | Resolve o digest da revisão no ar em homologação, promove **essa** imagem para produção, roda smoke test |
+| `db-grants.yml` | manual | Aplica o `sql/auth_ro.sql` pelo pod do GKE |
 
 Produção nunca constrói imagem. O `cd-prod.yml` lê o digest do que está servindo em
 homologação e faz deploy dele, então o artefato aprovado é bit a bit o artefato
