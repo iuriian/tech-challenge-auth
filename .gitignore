@@ -3,6 +3,15 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+*.pem
+
+# Chaves de service account: nunca versionar. O bootstrap-ci.sh grava a dele
+# fora do repositorio, mas um download pelo console cai aqui por descuido.
+*-sa.json
+sa-key*.json
+*service-account*.json
+gha-creds-*.json
+chave.json
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
@@ -43,3 +52,19 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Terraform ###
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+# Versionados de propósito: é deles que o CI lê project_id e region.
+!**/environments/*.tfvars
+
+# Gerados pelos workflows terraform-ci.yml e terraform-cd.yml
+tfplan
+plan.txt
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log

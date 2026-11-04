@@ -1,0 +1,120 @@
+name: Banco - papel auth_ro
+
+# Roda sql/auth_ro.sql, que cria o papel de leitura do serviço e concede
+# SELECT por coluna nas views cliente e funcionario.
+#
+# É dispatch manual, não automático, por depender de um fato de fora deste
+# repositório: as views só existem depois do deploy da app com a migration V16.
+# O script é idempotente, então repetir a execução é seguro.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Ambiente"
+        type: choice
+        options: [staging, production]
+        default: staging
+      name_prefix:
+        description: "Prefixo dos recursos do tech-challenge-database (instância, cluster e secret da app)"
+        default: tech-challenge-staging
+      zone:
+        description: "Zona do cluster do GKE usado como rota até o IP privado"
+        default: us-central1-a
+
+concurrency:
+  group: db-grants-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  grants:
+    name: GRANTs do auth_ro (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      PREFIX: ${{ inputs.name_prefix }}
+      ZONE: ${{ inputs.zone }}
+      # Default da variable db_auth_secret_id (terraform/variables.tf).
+      AUTH_SECRET: db-auth-password
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read environment config
+        run: |
+          TFVARS="terraform/environments/${ENVIRONMENT}.tfvars"
+          PROJECT="$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' "$TFVARS")"
+          case "$PROJECT" in
+            ""|PREENCHER*) echo "::error::Preencha project_id em $TFVARS"; exit 1 ;;
+          esac
+          {
+            echo "PROJECT=$PROJECT"
+            echo "INSTANCE=${PREFIX}-pg"
+            echo "CLUSTER=${PREFIX}"
+            echo "APP_SECRET=${PREFIX}-db-password"
+          } >> "$GITHUB_ENV"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      # A instância fica desligada fora de uso (cloudsql-power.yml do
+      # tech-challenge-database). Guarda o estado original para devolver no fim.
+      - name: Ensure instance is running
+        id: power
+        run: |
+          POLICY=$(gcloud sql instances describe "$INSTANCE" --project "$PROJECT" \
+            --format="value(settings.activationPolicy)" 2>/dev/null || echo "ABSENT")
+          echo "original=$POLICY" >> "$GITHUB_OUTPUT"
+          case "$POLICY" in
+            ABSENT) echo "::error::Instância $INSTANCE não existe: aplique o tech-challenge-database primeiro"; exit 1 ;;
+            NEVER)
+              echo "Instância desligada: ligando para os GRANTs"
+              gcloud sql instances patch "$INSTANCE" --project "$PROJECT" \
+                --activation-policy=ALWAYS --quiet
+              gcloud sql operations wait --project "$PROJECT" \
+                "$(gcloud sql operations list --instance="$INSTANCE" --project "$PROJECT" \
+                  --filter='status!=DONE' --format='value(name)' --limit=1)" --quiet || true
+              ;;
+          esac
+
+      - name: Credenciais do cluster
+        run: |
+          gcloud container clusters get-credentials "$CLUSTER" \
+            --zone "$ZONE" --project "$PROJECT"
+
+      # O banco só tem IP privado: de um runner do GitHub não há rota até ele.
+      # O pod descartável no GKE é a mesma travessia que o scripts/cloudsql.sh
+      # do tech-challenge-database faz com socat, aqui já falando psql.
+      - name: Aplicar os GRANTs
+        run: |
+          IP=$(gcloud sql instances describe "$INSTANCE" --project "$PROJECT" \
+            --format='value(ipAddresses[0].ipAddress)')
+          APP_PW=$(gcloud secrets versions access latest --secret="$APP_SECRET" --project "$PROJECT")
+          AUTH_PW=$(gcloud secrets versions access latest --secret="$AUTH_SECRET" --project "$PROJECT")
+          echo "::add-mask::$APP_PW"
+          echo "::add-mask::$AUTH_PW"
+
+          # A senha do auth_ro entra por stdin, não no pod spec nem na linha de
+          # comando. O \set é seguro porque o random_password que a gera no
+          # tech-challenge-database usa special = false.
+          {
+            printf "\\set senha '%s'\n" "$AUTH_PW"
+            cat sql/auth_ro.sql
+          } | kubectl run "auth-ro-grants-${GITHUB_RUN_ID}" \
+                --rm --stdin --restart=Never --pod-running-timeout=3m \
+                --image=postgres:16 --env="PGPASSWORD=$APP_PW" --command -- \
+                psql "host=$IP port=5432 dbname=oficina user=oficina_app sslmode=require" \
+                  -v ON_ERROR_STOP=1 -f -
+
+      # Roda mesmo se os GRANTs falharem: não deixa a instância ligada por engano.
+      - name: Restore power state
+        if: always() && steps.power.outputs.original == 'NEVER'
+        run: |
+          gcloud sql instances patch "$INSTANCE" --project "$PROJECT" \
+            --activation-policy=NEVER --quiet

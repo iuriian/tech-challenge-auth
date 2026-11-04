@@ -1,0 +1,16 @@
+# Todo arquivo de texto e versionado com LF. O CI roda em Linux e o Spotless
+# compara o fim de linha com o .editorconfig.
+* text=auto eol=lf
+
+# Scripts do Windows precisam de CRLF para rodar no cmd.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binarios: nunca converter.
+*.jar  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
