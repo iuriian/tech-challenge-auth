@@ -46,6 +46,12 @@ PAPEIS=(
   roles/artifactregistry.admin           # repositorio de imagens e seu IAM
   roles/secretmanager.admin              # jwt-signing-key, suas versoes e IAM
   roles/apigateway.admin                 # api, api config e gateway
+  # Habilitar o managed service do gateway (o google_project_service de
+  # gateway.tf) exige servicemanagement.services.bind, a unica permissao deste
+  # papel. Ela NAO esta em serviceusage.serviceUsageAdmin: sem o papel, o apply
+  # cria api, api config e gateway e so falha no ultimo recurso, com
+  # 403 error_code=110002.
+  roles/servicemanagement.serviceConsumer
   roles/iam.serviceAccountAdmin          # SAs auth-fn e auth-gateway
   roles/iam.serviceAccountUser           # actAs das duas SAs no deploy
   roles/resourcemanager.projectIamAdmin  # bindings de projeto (logs, run, cloudsql)
