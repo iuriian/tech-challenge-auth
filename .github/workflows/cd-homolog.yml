@@ -27,10 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # O Dockerfile copia build/libs/*-all.jar: o artefato do CI tem o JAR na
+      # raiz, então ele precisa pousar exatamente nesse diretório.
       - uses: actions/download-artifact@v4
         with:
           name: imagem-context
-          path: build
+          path: build/libs
 
       - uses: google-github-actions/auth@v2
         with:
