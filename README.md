@@ -329,7 +329,7 @@ direito de rodar. Com uma conta owner do projeto:
 ./scripts/bootstrap-ci.sh staging
 ```
 
-O script concede à SA do CI os nove papéis que o `apply` exige — nenhum deles
+O script concede à SA do CI os nove papéis de projeto que o `apply` exige — nenhum deles
 `editor` ou `owner`, cada um justificado no próprio arquivo — e `objectAdmin` no
 bucket do state. Depois, a chave que o Actions usa:
 
@@ -422,8 +422,9 @@ promovido.
 O deploy configura a rede com **Direct VPC egress** (`--network=default
 --subnet=default --vpc-egress=private-ranges-only`) e limita a escala a
 `--max-instances=3`, o que dá no máximo 6 conexões no banco (3 × pool de 2) — o
-mesmo valor do `CONNECTION LIMIT` do `auth_ro`. Se o deploy falhar por permissão
-na subnet, conceda `roles/compute.networkUser` na subnet `default` à SA do CI.
+mesmo valor do `CONNECTION LIMIT` do `auth_ro`. Anexar o serviço à subnet exige
+`compute.subnetworks.use`, e é o `bootstrap-ci.sh` que concede esse papel na
+subnet — com escopo de subnet, não de projeto.
 
 ### Rollback
 

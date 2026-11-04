@@ -24,6 +24,10 @@ ler() { sed -n "s/^$2 *= *\"\(.*\)\"/\1/p" "$1"; }
 PROJECT="$(ler "$TFVARS" project_id)"
 CI_ID="$(ler "$TFVARS" ci_service_account_id)"
 BUCKET="$(ler "$TFBACKEND" bucket)"
+REGION="$(ler "$TFVARS" region)"
+# A VPC default tem uma subnet de mesmo nome por regiao, que e a que o
+# cd-homolog.yml e o cd-prod.yml passam em --subnet.
+SUBNET="$(ler "$TFVARS" network)"
 
 case "$PROJECT" in
   ""|PREENCHER*) echo "ERRO: preencha project_id em $TFVARS" >&2; exit 1 ;;
@@ -65,6 +69,15 @@ if [[ -n "$BUCKET" ]]; then
   gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
     --member="serviceAccount:${SA}" --role=roles/storage.objectAdmin \
     --quiet --no-user-output-enabled
+fi
+
+# Direct VPC egress: o deploy anexa o servico a subnet, e isso exige
+# compute.subnetworks.use. Escopo de subnet, nao de projeto -- o pipeline nao
+# precisa alcancar o resto da rede. Sem este binding o primeiro deploy falha
+# por permissao na subnet.
+if [[ -n "$REGION" && -n "$SUBNET" ]]; then
+  echo "  + roles/compute.networkUser na subnet ${SUBNET}/${REGION}"
+  gcloud compute networks subnets add-iam-policy-binding "$SUBNET"     --project="$PROJECT" --region="$REGION"     --member="serviceAccount:${SA}" --role=roles/compute.networkUser     --quiet --no-user-output-enabled
 fi
 
 echo
