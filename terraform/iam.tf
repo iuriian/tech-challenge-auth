@@ -54,3 +54,26 @@ resource "google_service_account_iam_member" "ci_act_as_fn" {
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${data.google_service_account.ci.email}"
 }
+
+# Leitura das duas senhas pelo workflow db-grants: a do oficina_app, que roda o
+# sql/auth_ro.sql como dono das views, e a do próprio auth_ro, que o script
+# grava no CREATE ROLE.
+resource "google_secret_manager_secret_iam_member" "ci_db_auth" {
+  secret_id = data.google_secret_manager_secret.db_auth.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_service_account.ci.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "ci_db_app" {
+  secret_id = data.google_secret_manager_secret.db_app.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_service_account.ci.email}"
+}
+
+# O db-grants liga a instância antes de aplicar os GRANTs e a devolve ao estado
+# original depois; sem isso o psql não conecta com o banco desligado.
+resource "google_project_iam_member" "ci_cloudsql" {
+  project = var.project_id
+  role    = "roles/cloudsql.admin"
+  member  = "serviceAccount:${data.google_service_account.ci.email}"
+}
